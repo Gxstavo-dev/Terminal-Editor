@@ -9,4 +9,6 @@
 - Task 2 rulings: line and cursor positions count Unicode code points while stored text remains UTF-8; line endings preserve LF/CRLF and final-newline state. Atomic saves resolve existing symlinks to their target before replacement.
 - Task 3: complete; `make clean && make` compiles and links the sidebar, ncurses layout, mouse handling, and file navigation without warnings.
 - Task 3 ruling: include a synthetic `..` directory entry so mouse-only browsing can return to the parent directory; this adds one sidebar row and keeps navigation in the current folder tree.
-- Task 4: in progress.
+- Task 4: complete; `make clean && make` compiles and links config parsing without warnings.
+- Task 4 ruling: the font remains a terminal-emulator preference because terminal font controls are not portable; the editor documents the limitation. The light theme switches line numbers to black for contrast; dark theme keeps them white.
+- Task 5: in progress.

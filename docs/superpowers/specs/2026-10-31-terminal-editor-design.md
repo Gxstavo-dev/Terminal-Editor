@@ -19,7 +19,7 @@ El programa aceptará una ruta como argumento; si aún no existe, iniciará un b
 
 - Dos paneles: sidebar a la izquierda y área de edición a la derecha.
 - El sidebar mostrará archivos y directorios de la carpeta actual, además de una sección de buffers abiertos.
-- El panel de edición mostrará el texto y números de línea blancos.
+- El panel de edición mostrará el texto y números de línea blancos en el tema oscuro; el tema claro ajustará el contraste.
 - La edición usará autoindentación y tabuladores de cuatro espacios, siguiendo la configuración actual de Nano.
 - Sin barra superior, barra inferior persistente ni scrollbar. Los avisos de guardado y error serán temporales.
 - Paleta oscura sobria con acentos turquesa, adaptada a las capacidades del terminal.

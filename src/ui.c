@@ -60,21 +60,33 @@ static bool message_visible(const App *app)
             now.tv_nsec < app->message_until.tv_nsec);
 }
 
-static void init_colors(void)
+static void init_colors(const AppConfig *config)
 {
     if (!has_colors()) {
         return;
     }
     start_color();
     use_default_colors();
-    init_pair(PAIR_DEFAULT, COLOR_WHITE, -1);
-    init_pair(PAIR_HEADING, COLOR_CYAN, -1);
-    init_pair(PAIR_SELECTED, COLOR_BLACK, COLOR_CYAN);
-    init_pair(PAIR_GUTTER, COLOR_WHITE, -1);
-    init_pair(PAIR_ERROR, COLOR_RED, -1);
-    init_pair(PAIR_WARNING, COLOR_YELLOW, -1);
-    init_pair(PAIR_INFO, COLOR_CYAN, -1);
-    init_pair(PAIR_SELECTION, COLOR_BLACK, COLOR_CYAN);
+    if (config->theme == THEME_LIGHT) {
+        init_pair(PAIR_DEFAULT, COLOR_BLACK, COLOR_WHITE);
+        init_pair(PAIR_HEADING, COLOR_BLUE, COLOR_WHITE);
+        init_pair(PAIR_SELECTED, COLOR_BLACK, COLOR_YELLOW);
+        init_pair(PAIR_GUTTER, COLOR_BLACK, COLOR_WHITE);
+        init_pair(PAIR_ERROR, COLOR_RED, COLOR_WHITE);
+        init_pair(PAIR_WARNING, COLOR_MAGENTA, COLOR_WHITE);
+        init_pair(PAIR_INFO, COLOR_BLUE, COLOR_WHITE);
+        init_pair(PAIR_SELECTION, COLOR_BLACK, COLOR_YELLOW);
+    } else {
+        init_pair(PAIR_DEFAULT, COLOR_WHITE, COLOR_BLACK);
+        init_pair(PAIR_HEADING, COLOR_CYAN, COLOR_BLACK);
+        init_pair(PAIR_SELECTED, COLOR_BLACK, COLOR_CYAN);
+        init_pair(PAIR_GUTTER, COLOR_WHITE, COLOR_BLACK);
+        init_pair(PAIR_ERROR, COLOR_RED, COLOR_BLACK);
+        init_pair(PAIR_WARNING, COLOR_YELLOW, COLOR_BLACK);
+        init_pair(PAIR_INFO, COLOR_CYAN, COLOR_BLACK);
+        init_pair(PAIR_SELECTION, COLOR_BLACK, COLOR_CYAN);
+    }
+    bkgdset(COLOR_PAIR(PAIR_DEFAULT));
 }
 
 static Layout get_layout(const App *app)
@@ -770,7 +782,7 @@ int ui_run(App *app)
     mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
     wtimeout(stdscr, 200);
     curs_set(1);
-    init_colors();
+    init_colors(&app->config);
 
     while (app->running) {
         Layout layout = get_layout(app);

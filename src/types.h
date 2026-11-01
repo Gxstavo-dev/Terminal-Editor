@@ -43,6 +43,7 @@ typedef struct {
     Theme theme;
     LintRule *rules;
     size_t rule_count;
+    size_t warning_count;
 } AppConfig;
 
 typedef struct {
