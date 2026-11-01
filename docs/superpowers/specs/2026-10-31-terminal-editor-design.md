@@ -23,12 +23,14 @@ El programa aceptará una ruta como argumento; si aún no existe, iniciará un b
 - La edición usará autoindentación y tabuladores de cuatro espacios, siguiendo la configuración actual de Nano.
 - Sin barra superior, barra inferior persistente ni scrollbar. Los avisos de guardado y error serán temporales.
 - Paleta oscura sobria con acentos turquesa, adaptada a las capacidades del terminal.
-- El sidebar podrá ocultarse y mostrarse con `F2` para ampliar el área de edición. `Tab` cambiará el foco entre sidebar y editor.
+- El sidebar podrá ocultarse y mostrarse con `F2` para ampliar el área de edición; un clic en un panel le dará el foco.
+- El mouse será una forma principal de navegación: clic para ubicar el cursor o seleccionar elementos del sidebar, arrastre para seleccionar texto y rueda para desplazar el panel bajo el puntero.
 
 ## Comportamiento
 
-- Navegar el sidebar con las flechas; `Enter` abre un archivo o entra en un directorio.
-- Editar texto con inserción, borrado y movimiento del cursor.
+- Un clic en un archivo lo abre; un clic en un directorio lo abre en el sidebar; un clic en un buffer lo activa.
+- Un clic en el texto coloca el cursor; arrastrar selecciona texto. La rueda desplaza el panel bajo el puntero.
+- Escribir y borrar con el teclado; reposicionar el cursor con clic y seleccionar texto arrastrando.
 - Al crear una línea, conservar la indentación de la anterior; `Tab` insertará cuatro espacios.
 - `Ctrl+O` guarda el buffer actual, siguiendo la convención de Nano. Si no tiene ruta, solicitará una.
 - `Ctrl+X` cierra el editor. Si hay cambios sin guardar, pedirá confirmación.
@@ -59,5 +61,6 @@ El listado del sidebar será bajo demanda y de un solo nivel para limitar trabaj
 ## Riesgos y decisiones pendientes
 
 - El RSS varía por sistema, terminal, biblioteca ncurses y método de medición; la comparación requiere el mismo entorno.
+- Los eventos de mouse dependen de que el emulador de terminal informe clics y rueda; el teclado seguirá disponible para escribir y usar atajos.
 - El tamaño y el comportamiento del sidebar en terminales estrechas se ajustarán al construir el prototipo; en pantallas muy pequeñas podrá ocultarse.
 - El soporte para Unicode y archivos con finales de línea distintos deberá definirse según lo que revele el primer prototipo.
