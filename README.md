@@ -59,3 +59,16 @@ The terminal emulator controls the font. Change the font in the terminal's prefe
 ## Memory target
 
 The target is approximately 6.9 MiB RSS for the idle editor with an empty buffer, compared with Nano on the same host. The latest measurement in the development environment was 5,048 kB RSS. A linter is a separate child process and may temporarily use additional memory.
+
+## Manual check
+
+Build and open a new temporary file:
+
+```sh
+make
+./terminal-editor /tmp/demo.c
+```
+
+Click in the editor and type, drag across text and press Backspace, then save with `Ctrl+O`. Reopen the file to confirm the saved text. To check the sidebar, launch `./terminal-editor` and click files, directories, `..`, and open buffers; scroll over each pane and toggle the sidebar with `F2`. To check unsaved-change protection, edit a buffer and press `Ctrl+X`, then answer `N` and confirm the editor stays open.
+
+If `clang` is installed, configure `lint.c=clang -fsyntax-only` in `~/.config/terminal-editor/config`, put a syntax error in `/tmp/demo.c`, and save. An inline diagnostic should appear; click it to jump to its location. To inspect memory, leave the editor open and run `ps -C terminal-editor -o pid,rss,cmd` in another terminal.
