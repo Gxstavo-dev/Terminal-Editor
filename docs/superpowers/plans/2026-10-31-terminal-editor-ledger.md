@@ -17,5 +17,5 @@
 - Task 5 ruling: lint commands run via `execvp` without a shell and receive the file path as their final argument — cost if wrong: shell pipelines and shell expansions require a wrapper executable.
 - Task 5 ruling: lint output is capped at 1 MiB and each run at five seconds — cost if wrong: verbose or slow lint commands are stopped.
 - Task 5 ruling: diagnostics for other files are discarded from the active buffer, and out-of-range positions clamp to the final line/column — cost if wrong: related-file diagnostics are not displayed in v0.1.
-- Task 6: complete; final `make clean && make` completed without compiler warnings, and the empty-buffer editor measured 5,044 kB RSS in this environment. No automated tests were added or run.
+- Task 6: complete; final `make clean && make` completed without compiler warnings, and the empty-buffer editor measured 5,048 kB RSS in this environment. No automated tests were added or run.
 - Final review: self-review (no subagent reviewer available under the current collaboration restrictions).

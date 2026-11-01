@@ -14,7 +14,7 @@ Editor de texto para terminal inspirado en Nano, con interfaz moderna, mouse com
 - Configuración para tema, tabulación, autoindentación, sidebar y comandos de lint por extensión.
 - Linters externos se ejecutan al guardar (límite: cinco segundos y 1 MiB de salida). Los errores y avisos aparecen inline junto a las líneas y se pueden pulsar para saltar a su ubicación.
 - La API de plugins se pospone hasta que la configuración y la integración de diagnósticos estén asentadas.
-- Medición inicial del binario en este entorno: **5.044 kB RSS** con un buffer vacío; la comparación exacta debe hacerse en el equipo del usuario.
+- Medición más reciente del binario en este entorno: **5.048 kB RSS** con un buffer vacío; la comparación exacta debe hacerse en el equipo del usuario.
 
 ## Hoja de ruta
 
