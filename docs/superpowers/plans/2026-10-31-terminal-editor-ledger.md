@@ -7,4 +7,6 @@
 - Ruling: this system exposes ncursesw declarations via `<curses.h>` rather than `<ncursesw/curses.h>`; use the generic header with `pkg-config`'s `-lncursesw` link flags. Verified by the successful build.
 - Task 2: complete; `make` compiles and links the buffer module without warnings.
 - Task 2 rulings: line and cursor positions count Unicode code points while stored text remains UTF-8; line endings preserve LF/CRLF and final-newline state. Atomic saves resolve existing symlinks to their target before replacement.
-- Task 3: in progress.
+- Task 3: complete; `make clean && make` compiles and links the sidebar, ncurses layout, mouse handling, and file navigation without warnings.
+- Task 3 ruling: include a synthetic `..` directory entry so mouse-only browsing can return to the parent directory; this adds one sidebar row and keeps navigation in the current folder tree.
+- Task 4: in progress.

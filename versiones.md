@@ -7,7 +7,7 @@ Editor de texto para terminal inspirado en Nano, con interfaz moderna, mouse com
 ## Decisiones actuales
 
 - Implementación en C con ncurses.
-- Sidebar con archivos y directorios de la carpeta actual y buffers abiertos.
+- Sidebar con archivos y directorios de la carpeta actual, navegación al directorio padre y buffers abiertos.
 - Mouse para mover el cursor, seleccionar texto, navegar el sidebar y desplazar el contenido. Teclado para escribir y atajos.
 - Sin barras persistentes arriba o abajo ni scrollbar; números de línea blancos y paleta oscura con acentos turquesa.
 - Fuente elegida en la aplicación de terminal; el proyecto documentará cómo cambiarla en distintos emuladores.

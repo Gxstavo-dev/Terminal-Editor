@@ -92,7 +92,7 @@
 - Modify: `src/main.c`
 
 **Interfaces:**
-- `int files_list(const char *directory, FileEntry **entries, size_t *count);` returns one directory level, excluding `.` and `..`.
+- `int files_list(const char *directory, FileEntry **entries, size_t *count);` returns one directory level, excludes `.`, and prepends a synthetic `..` parent entry.
 - `void files_free(FileEntry *entries, size_t count);` frees the listing.
 - `int ui_run(App *app);` owns the ncurses event loop and calls buffer, file, and config operations.
 

@@ -78,7 +78,6 @@ typedef struct {
     size_t file_scroll;
     size_t buffer_scroll;
     char *current_directory;
-    const char *initial_path;
     FileEntry *files;
     size_t file_count;
     AppConfig config;

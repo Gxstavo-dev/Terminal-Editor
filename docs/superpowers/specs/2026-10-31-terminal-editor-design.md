@@ -13,7 +13,7 @@ El objetivo de memoria se medirá con el mismo método y entorno que Nano. Se ap
 
 Implementar en C con ncurses para manejar ventanas, entrada de teclado y mouse, redibujado y colores. Se elige sobre el control manual de secuencias ANSI porque permite dedicar el prototipo al diseño y al comportamiento del editor, manteniendo el control directo de las asignaciones de memoria.
 
-El programa aceptará una ruta como argumento; si aún no existe, iniciará un buffer nuevo asociado a esa ruta. Sin argumento, abrirá la carpeta actual para navegar desde el sidebar. El listado será de un nivel; no recorrerá directorios recursivamente en segundo plano.
+El programa aceptará una ruta como argumento; si aún no existe, iniciará un buffer nuevo asociado a esa ruta. Sin argumento, abrirá la carpeta actual para navegar desde el sidebar. El listado será de un nivel e incluirá una entrada `..` para volver al directorio padre; no recorrerá directorios recursivamente en segundo plano.
 
 ## Interfaz
 
