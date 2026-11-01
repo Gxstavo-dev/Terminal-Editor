@@ -33,7 +33,7 @@
 - `src/ui.h`, `src/ui.c`: ncurses layout, rendering, mouse input, sidebar, and event loop.
 - `src/main.c`: locale setup, command-line arguments, app lifecycle, cleanup.
 - `README.md`: build/run/config/linter instructions, including terminal-font guidance.
-- `versiones.md`: durable roadmap and decision log, updated as v0.1 ships.
+- `docs/project/versiones.md`: durable roadmap and decision log, updated as v0.1 ships.
 
 ## Review Focus
 
@@ -150,10 +150,10 @@
 
 **Files:**
 - Modify: `README.md`
-- Modify: `versiones.md`
+- Modify: `docs/project/versiones.md`
 - Modify: `docs/superpowers/specs/2026-10-31-terminal-editor-design.md`
 
 - [ ] Document build prerequisites, startup with a file or current directory, mouse actions, keyboard shortcuts, config, diagnostic format, and limitations.
-- [ ] Update `versiones.md` to mark v0.1 implemented only after the user-facing flows are complete.
+- [ ] Update `docs/project/versiones.md` to mark v0.1 implemented only after the user-facing flows are complete.
 - [ ] Measure idle RSS with an empty buffer and compare against Nano on the same host; record editor RSS and linter-child RSS separately.
 - [ ] Leave plugin API work in v0.2 and record any remaining Unicode, terminal, or linter limitations in the roadmap.

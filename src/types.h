@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <sys/stat.h>
 #include <time.h>
 
 typedef enum {
@@ -20,6 +21,19 @@ typedef struct {
     char *data;
     size_t byte_length;
 } Line;
+
+typedef struct {
+    Line *lines;
+    size_t line_count;
+    size_t cursor_line;
+    size_t cursor_column;
+    size_t selection_line;
+    size_t selection_column;
+    bool selecting;
+    bool dirty;
+    bool final_newline;
+    bool crlf;
+} BufferState;
 
 typedef struct {
     char *path;
@@ -68,6 +82,14 @@ typedef struct {
     size_t selection_column;
     Diagnostic *diagnostics;
     size_t diagnostic_count;
+    struct stat disk_metadata;
+    bool disk_metadata_valid;
+    bool disk_file_exists;
+    bool external_change_pending;
+    BufferState undo[100];
+    size_t undo_count;
+    BufferState redo[100];
+    size_t redo_count;
 } Buffer;
 
 typedef struct {
@@ -79,6 +101,9 @@ typedef struct {
     size_t file_scroll;
     size_t buffer_scroll;
     char *current_directory;
+    char git_branch[256];
+    struct stat directory_metadata;
+    bool directory_metadata_valid;
     FileEntry *files;
     size_t file_count;
     AppConfig config;

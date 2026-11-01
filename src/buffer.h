@@ -8,6 +8,8 @@
 int buffer_init(Buffer *buffer, const char *path);
 int buffer_load(Buffer *buffer, const char *path);
 int buffer_save(Buffer *buffer, const char *path);
+bool buffer_check_external_change(Buffer *buffer);
+void buffer_record_disk_state(Buffer *buffer);
 void buffer_destroy(Buffer *buffer);
 int buffer_insert(Buffer *buffer, wchar_t character);
 int buffer_backspace(Buffer *buffer);
@@ -15,6 +17,9 @@ int buffer_delete(Buffer *buffer);
 int buffer_newline(Buffer *buffer, bool autoindent, size_t tab_width);
 void buffer_set_cursor(Buffer *buffer, size_t line, size_t column, bool extend_selection);
 int buffer_delete_selection(Buffer *buffer);
+int buffer_history_record(Buffer *buffer);
+int buffer_undo(Buffer *buffer);
+int buffer_redo(Buffer *buffer);
 size_t buffer_line_codepoints(const Line *line);
 size_t buffer_line_cells(const Line *line);
 size_t buffer_column_to_cell(const Line *line, size_t column);

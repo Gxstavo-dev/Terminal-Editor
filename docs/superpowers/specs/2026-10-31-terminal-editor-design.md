@@ -22,8 +22,9 @@ El programa aceptará una ruta como argumento; si aún no existe, iniciará un b
 - El panel de edición mostrará el texto y números de línea blancos en el tema oscuro; el tema claro ajustará el contraste.
 - La edición usará autoindentación y tabuladores de cuatro espacios, siguiendo la configuración actual de Nano.
 - Sin barra superior, barra inferior persistente ni scrollbar. Los avisos de guardado y error serán temporales.
-- Paleta oscura sobria con acentos turquesa, adaptada a las capacidades del terminal.
-- El sidebar podrá ocultarse y mostrarse con `F2` para ampliar el área de edición; un clic en un panel le dará el foco.
+- Paleta oscura sobria con acentos turquesa sobre el fondo elegido en la terminal, adaptada a sus capacidades.
+- El sidebar mostrará solo el explorador de archivos, con texto blanco y un control `×` para ocultarlo; al ocultarlo aparecerá `+` para mostrarlo. También podrá alternarse con `F2`.
+- Un footer de una línea bajo el editor mostrará la rama Git actual, o `sin repo Git` fuera de un repositorio; el sidebar reservará toda su altura para archivos.
 - El mouse será una forma principal de navegación: clic para ubicar el cursor o seleccionar elementos del sidebar, arrastre para seleccionar texto y rueda para desplazar el panel bajo el puntero.
 - La configuración en `~/.config/terminal-editor/config` permitirá cambiar paleta, ancho de tabulación, autoindentación, preferencias del sidebar y comandos de lint por extensión.
 - Los diagnósticos de lint aparecerán junto a la línea afectada, con marcas de severidad en el margen. No habrá un panel inferior persistente.
@@ -35,7 +36,10 @@ El programa aceptará una ruta como argumento; si aún no existe, iniciará un b
 - Un clic en el texto coloca el cursor; arrastrar selecciona texto. La rueda desplaza el panel bajo el puntero.
 - Escribir y borrar con el teclado; reposicionar el cursor con clic y seleccionar texto arrastrando.
 - Al crear una línea, conservar la indentación de la anterior; `Tab` insertará cuatro espacios.
-- `Ctrl+O` guarda el buffer actual, siguiendo la convención de Nano. Si no tiene ruta, solicitará una.
+- `Ctrl+S` y `Ctrl+O` guardan el buffer actual. Si no tiene ruta, solicitará una.
+- `Ctrl+W` guarda automáticamente y cierra el buffer activo; para un buffer sin ruta, solicitará dónde guardarlo.
+- Los cambios externos se detectarán mientras el editor está abierto. Los buffers limpios se recargarán automáticamente; los buffers con cambios locales conservarán su contenido y ofrecerán `Ctrl+R` para recargar o `Ctrl+S` para confirmar la sobrescritura del archivo externo.
+- El árbol de archivos se actualizará cuando cambie el contenido del directorio actual.
 - `Ctrl+X` cierra el editor. Si hay cambios sin guardar, pedirá confirmación.
 - La configuración asociará extensiones de archivo con comandos de lint externos. El lint se ejecutará al guardar, con un límite de cinco segundos y 1 MiB de salida; leerá diagnósticos con el formato `ruta:línea:columna: severidad: mensaje`, donde severidad es `error`, `warning` o `info`; hacer clic en un diagnóstico llevará el cursor a su ubicación.
 - Los errores de lectura o escritura se mostrarán como avisos temporales.

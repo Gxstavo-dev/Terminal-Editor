@@ -10,6 +10,61 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+void buffer_record_disk_state(Buffer *buffer)
+{
+    struct stat metadata;
+    if (buffer == NULL || buffer->path == NULL) {
+        return;
+    }
+    if (stat(buffer->path, &metadata) != 0) {
+        buffer->disk_metadata_valid = errno == ENOENT;
+        buffer->disk_file_exists = false;
+        return;
+    }
+    buffer->disk_metadata = metadata;
+    buffer->disk_metadata_valid = true;
+    buffer->disk_file_exists = true;
+}
+
+bool buffer_check_external_change(Buffer *buffer)
+{
+    struct stat current;
+    bool changed;
+
+    if (buffer == NULL || buffer->path == NULL) {
+        return false;
+    }
+    if (stat(buffer->path, &current) != 0) {
+        if (errno == ENOENT && buffer->disk_metadata_valid && buffer->disk_file_exists) {
+            buffer->disk_file_exists = false;
+            return true;
+        }
+        return false;
+    }
+    if (!buffer->disk_metadata_valid) {
+        buffer->disk_metadata = current;
+        buffer->disk_metadata_valid = true;
+        buffer->disk_file_exists = true;
+        return false;
+    }
+    if (!buffer->disk_file_exists) {
+        buffer->disk_metadata = current;
+        buffer->disk_file_exists = true;
+        return true;
+    }
+    changed = current.st_dev != buffer->disk_metadata.st_dev ||
+              current.st_ino != buffer->disk_metadata.st_ino ||
+              current.st_size != buffer->disk_metadata.st_size ||
+              current.st_mtim.tv_sec != buffer->disk_metadata.st_mtim.tv_sec ||
+              current.st_mtim.tv_nsec != buffer->disk_metadata.st_mtim.tv_nsec ||
+              current.st_ctim.tv_sec != buffer->disk_metadata.st_ctim.tv_sec ||
+              current.st_ctim.tv_nsec != buffer->disk_metadata.st_ctim.tv_nsec;
+    if (changed) {
+        buffer->disk_metadata = current;
+    }
+    return changed;
+}
+
 static size_t next_character(const char *text, size_t remaining, mbstate_t *state,
                              wchar_t *character)
 {
@@ -145,6 +200,91 @@ static void remove_line(Buffer *buffer, size_t index)
     buffer->line_count--;
 }
 
+static void state_destroy(BufferState *state)
+{
+    for (size_t i = 0; i < state->line_count; i++) free(state->lines[i].data);
+    free(state->lines);
+    memset(state, 0, sizeof(*state));
+}
+
+static int state_copy(BufferState *state, const Buffer *buffer)
+{
+    memset(state, 0, sizeof(*state));
+    state->lines = calloc(buffer->line_count, sizeof(*state->lines));
+    if (state->lines == NULL) return -1;
+    state->line_count = buffer->line_count;
+    for (size_t i = 0; i < buffer->line_count; i++) {
+        state->lines[i].data = malloc(buffer->lines[i].byte_length + 1);
+        if (state->lines[i].data == NULL) { state_destroy(state); return -1; }
+        memcpy(state->lines[i].data, buffer->lines[i].data,
+               buffer->lines[i].byte_length + 1);
+        state->lines[i].byte_length = buffer->lines[i].byte_length;
+    }
+    state->cursor_line = buffer->cursor_line;
+    state->cursor_column = buffer->cursor_column;
+    state->selection_line = buffer->selection_line;
+    state->selection_column = buffer->selection_column;
+    state->selecting = buffer->selecting;
+    state->dirty = buffer->dirty;
+    state->final_newline = buffer->final_newline;
+    state->crlf = buffer->crlf;
+    return 0;
+}
+
+static void state_restore(Buffer *buffer, BufferState *state)
+{
+    for (size_t i = 0; i < buffer->line_count; i++) free(buffer->lines[i].data);
+    free(buffer->lines);
+    buffer->lines = state->lines;
+    buffer->line_count = state->line_count;
+    buffer->cursor_line = state->cursor_line;
+    buffer->cursor_column = state->cursor_column;
+    buffer->selection_line = state->selection_line;
+    buffer->selection_column = state->selection_column;
+    buffer->selecting = state->selecting;
+    buffer->dirty = state->dirty;
+    buffer->final_newline = state->final_newline;
+    buffer->crlf = state->crlf;
+    memset(state, 0, sizeof(*state));
+}
+
+int buffer_history_record(Buffer *buffer)
+{
+    for (size_t i = 0; i < buffer->redo_count; i++) state_destroy(&buffer->redo[i]);
+    buffer->redo_count = 0;
+    if (buffer->undo_count == 100) {
+        state_destroy(&buffer->undo[0]);
+        memmove(&buffer->undo[0], &buffer->undo[1], 99 * sizeof(buffer->undo[0]));
+        memset(&buffer->undo[99], 0, sizeof(buffer->undo[99]));
+        buffer->undo_count--;
+    }
+    if (state_copy(&buffer->undo[buffer->undo_count], buffer) != 0) return -1;
+    buffer->undo_count++;
+    return 0;
+}
+
+static int history_move(Buffer *buffer, BufferState *from, size_t *from_count,
+                        BufferState *to, size_t *to_count)
+{
+    if (*from_count == 0 || *to_count == 100) return 0;
+    if (state_copy(&to[*to_count], buffer) != 0) return -1;
+    (*to_count)++;
+    state_restore(buffer, &from[--(*from_count)]);
+    return 1;
+}
+
+int buffer_undo(Buffer *buffer)
+{
+    return history_move(buffer, buffer->undo, &buffer->undo_count,
+                        buffer->redo, &buffer->redo_count);
+}
+
+int buffer_redo(Buffer *buffer)
+{
+    return history_move(buffer, buffer->redo, &buffer->redo_count,
+                        buffer->undo, &buffer->undo_count);
+}
+
 int buffer_init(Buffer *buffer, const char *path)
 {
     memset(buffer, 0, sizeof(*buffer));
@@ -194,6 +334,7 @@ int buffer_load(Buffer *buffer, const char *path)
     file = fopen(path, "rb");
     if (file == NULL) {
         if (errno == ENOENT) {
+            buffer_record_disk_state(buffer);
             return 0;
         }
         buffer_destroy(buffer);
@@ -234,6 +375,7 @@ int buffer_load(Buffer *buffer, const char *path)
         return -1;
     }
     buffer->dirty = false;
+    buffer_record_disk_state(buffer);
     return 0;
 }
 
@@ -519,6 +661,8 @@ void buffer_destroy(Buffer *buffer)
         free(buffer->lines[i].data);
     }
     free(buffer->lines);
+    for (size_t i = 0; i < buffer->undo_count; i++) state_destroy(&buffer->undo[i]);
+    for (size_t i = 0; i < buffer->redo_count; i++) state_destroy(&buffer->redo[i]);
     for (size_t i = 0; i < buffer->diagnostic_count; i++) {
         free(buffer->diagnostics[i].path);
         free(buffer->diagnostics[i].message);
@@ -612,6 +756,7 @@ int buffer_save(Buffer *buffer, const char *path)
         new_buffer_path = NULL;
     }
     buffer->dirty = false;
+    buffer_record_disk_state(buffer);
     result = 0;
     goto cleanup_closed;
 

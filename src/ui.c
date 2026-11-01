@@ -6,11 +6,14 @@
 
 #include <curses.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <locale.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 #include <wchar.h>
@@ -28,8 +31,19 @@ enum {
     PAIR_ERROR,
     PAIR_WARNING,
     PAIR_INFO,
-    PAIR_SELECTION
+    PAIR_SELECTION,
+    PAIR_BORDER,
+    PAIR_SIDEBAR_DIM
 };
+
+#define BORDER_COLOR 255
+
+static short saved_border_color[3];
+static bool restore_border_color;
+static uint64_t sidebar_render_key;
+static bool sidebar_render_key_valid;
+static bool kitty_sync_updates;
+static char current_pointer_shape[16];
 
 typedef struct {
     int rows;
@@ -37,7 +51,6 @@ typedef struct {
     int sidebar_width;
     int editor_x;
     int editor_width;
-    int file_split;
     bool sidebar_visible;
 } Layout;
 
@@ -61,6 +74,17 @@ static bool message_visible(const App *app)
             now.tv_nsec < app->message_until.tv_nsec);
 }
 
+static bool active_external_change_pending(const App *app)
+{
+    return app->active_buffer < app->buffer_count &&
+           app->buffers[app->active_buffer].external_change_pending;
+}
+
+static bool status_visible(const App *app)
+{
+    return message_visible(app) || active_external_change_pending(app);
+}
+
 static void init_colors(const AppConfig *config)
 {
     if (!has_colors()) {
@@ -69,23 +93,44 @@ static void init_colors(const AppConfig *config)
     start_color();
     use_default_colors();
     if (config->theme == THEME_LIGHT) {
-        init_pair(PAIR_DEFAULT, COLOR_BLACK, COLOR_WHITE);
-        init_pair(PAIR_HEADING, COLOR_BLUE, COLOR_WHITE);
-        init_pair(PAIR_SELECTED, COLOR_BLACK, COLOR_YELLOW);
-        init_pair(PAIR_GUTTER, COLOR_BLACK, COLOR_WHITE);
-        init_pair(PAIR_ERROR, COLOR_RED, COLOR_WHITE);
-        init_pair(PAIR_WARNING, COLOR_MAGENTA, COLOR_WHITE);
-        init_pair(PAIR_INFO, COLOR_BLUE, COLOR_WHITE);
+        init_pair(PAIR_DEFAULT, COLOR_BLACK, -1);
+        init_pair(PAIR_HEADING, COLOR_BLUE, -1);
+        init_pair(PAIR_SELECTED, COLOR_WHITE, -1);
+        init_pair(PAIR_GUTTER, COLOR_BLACK, -1);
+        init_pair(PAIR_ERROR, COLOR_RED, -1);
+        init_pair(PAIR_WARNING, COLOR_MAGENTA, -1);
+        init_pair(PAIR_INFO, COLOR_BLUE, -1);
         init_pair(PAIR_SELECTION, COLOR_BLACK, COLOR_YELLOW);
     } else {
-        init_pair(PAIR_DEFAULT, COLOR_WHITE, COLOR_BLACK);
-        init_pair(PAIR_HEADING, COLOR_CYAN, COLOR_BLACK);
-        init_pair(PAIR_SELECTED, COLOR_BLACK, COLOR_CYAN);
-        init_pair(PAIR_GUTTER, COLOR_WHITE, COLOR_BLACK);
-        init_pair(PAIR_ERROR, COLOR_RED, COLOR_BLACK);
-        init_pair(PAIR_WARNING, COLOR_YELLOW, COLOR_BLACK);
-        init_pair(PAIR_INFO, COLOR_CYAN, COLOR_BLACK);
+        init_pair(PAIR_DEFAULT, COLOR_WHITE, -1);
+        init_pair(PAIR_HEADING, COLOR_CYAN, -1);
+        init_pair(PAIR_SELECTED, COLOR_WHITE, -1);
+        init_pair(PAIR_GUTTER, COLOR_WHITE, -1);
+        init_pair(PAIR_ERROR, COLOR_RED, -1);
+        init_pair(PAIR_WARNING, COLOR_YELLOW, -1);
+        init_pair(PAIR_INFO, COLOR_CYAN, -1);
         init_pair(PAIR_SELECTION, COLOR_BLACK, COLOR_CYAN);
+    }
+    if (COLORS > BORDER_COLOR) {
+        init_pair(PAIR_BORDER, BORDER_COLOR, -1);
+        if (can_change_color() &&
+            color_content(BORDER_COLOR, &saved_border_color[0],
+                          &saved_border_color[1], &saved_border_color[2]) == OK &&
+            init_color(BORDER_COLOR, 192, 192, 192) == OK) {
+            restore_border_color = true;
+        }
+    } else {
+        init_pair(PAIR_BORDER, config->theme == THEME_LIGHT ? COLOR_BLACK : COLOR_WHITE,
+                  -1);
+    }
+    if (COLORS >= 256) {
+        init_pair(PAIR_SIDEBAR_DIM, 244, -1);
+    } else if (COLORS >= 16) {
+        init_pair(PAIR_SIDEBAR_DIM, 8, -1);
+    } else if (config->theme == THEME_LIGHT) {
+        init_pair(PAIR_SIDEBAR_DIM, COLOR_BLACK, -1);
+    } else {
+        init_pair(PAIR_SIDEBAR_DIM, COLOR_WHITE, -1);
     }
     bkgdset(COLOR_PAIR(PAIR_DEFAULT));
 }
@@ -94,12 +139,13 @@ static Layout get_layout(const App *app)
 {
     Layout layout = {0};
     getmaxyx(stdscr, layout.rows, layout.columns);
-    layout.file_split = layout.rows / 2;
     layout.sidebar_width = (int)app->config.sidebar_width;
-    layout.sidebar_visible = app->config.sidebar_visible &&
+    layout.sidebar_visible = app->config.sidebar_visible && layout.rows >= 8 &&
                              layout.columns >= layout.sidebar_width + MIN_EDITOR_WIDTH + GUTTER_WIDTH;
     if (layout.sidebar_visible) {
         layout.editor_x = layout.sidebar_width + 1;
+    } else {
+        layout.editor_x = 3;
     }
     layout.editor_width = layout.columns - layout.editor_x;
     return layout;
@@ -217,50 +263,165 @@ static bool buffer_path_is(const Buffer *buffer, const char *path)
     return same;
 }
 
+static char *join_path(const char *directory, const char *name)
+{
+    size_t length = strlen(directory) + strlen(name) + 2;
+    char *path = malloc(length);
+    if (path != NULL) {
+        snprintf(path, length, "%s/%s", directory, name);
+    }
+    return path;
+}
+
+static char *find_git_directory(const char *start)
+{
+    char *directory = strdup(start);
+    if (directory == NULL) {
+        return NULL;
+    }
+    for (;;) {
+        char *marker = join_path(directory, ".git");
+        struct stat metadata;
+        if (marker == NULL) {
+            break;
+        }
+        if (stat(marker, &metadata) == 0) {
+            if (S_ISDIR(metadata.st_mode)) {
+                free(directory);
+                return marker;
+            }
+            FILE *file = fopen(marker, "r");
+            char *line = NULL;
+            size_t capacity = 0;
+            ssize_t length = file == NULL ? -1 : getline(&line, &capacity, file);
+            if (file != NULL) {
+                fclose(file);
+            }
+            free(marker);
+            if (length > 8 && strncmp(line, "gitdir: ", 8) == 0) {
+                line[strcspn(line + 8, "\r\n") + 8] = '\0';
+                char *git_directory = line[8] == '/'
+                                          ? strdup(line + 8)
+                                          : join_path(directory, line + 8);
+                free(line);
+                free(directory);
+                return git_directory;
+            }
+            free(line);
+            break;
+        }
+        free(marker);
+        if (strcmp(directory, "/") == 0) {
+            break;
+        }
+        char *slash = strrchr(directory, '/');
+        if (slash == NULL) {
+            break;
+        }
+        if (slash == directory) {
+            directory[1] = '\0';
+        } else {
+            *slash = '\0';
+        }
+    }
+    free(directory);
+    return NULL;
+}
+
+static bool refresh_git_branch(App *app)
+{
+    char branch[sizeof(app->git_branch)] = "sin repo Git";
+    char *git_directory = find_git_directory(app->current_directory);
+    if (git_directory != NULL) {
+        char *head_path = join_path(git_directory, "HEAD");
+        FILE *head = head_path == NULL ? NULL : fopen(head_path, "r");
+        char *line = NULL;
+        size_t capacity = 0;
+        ssize_t length = head == NULL ? -1 : getline(&line, &capacity, head);
+        if (head != NULL) {
+            fclose(head);
+        }
+        if (length > 0) {
+            line[strcspn(line, "\r\n")] = '\0';
+            if (strncmp(line, "ref: refs/heads/", 16) == 0) {
+                snprintf(branch, sizeof(branch), "%s", line + 16);
+            } else {
+                snprintf(branch, sizeof(branch), "detached %.7s", line);
+            }
+        }
+        free(line);
+        free(head_path);
+    }
+    free(git_directory);
+    if (strcmp(app->git_branch, branch) == 0) {
+        return false;
+    }
+    snprintf(app->git_branch, sizeof(app->git_branch), "%s", branch);
+    return true;
+}
+
 static void draw_sidebar(App *app, const Layout *layout)
 {
-    int file_end = layout->file_split;
-    int buffer_header = layout->file_split;
+    int file_start = 4;
+    int file_end = layout->rows;
     int width = layout->sidebar_width;
 
     if (!layout->sidebar_visible || width < 8) {
         return;
     }
-    draw_utf8(0, 1, "FILES", width - 2, PAIR_HEADING, true);
-    for (int row = 1; row < file_end; row++) {
-        size_t index = app->file_scroll + (size_t)(row - 1);
+    attrset(COLOR_PAIR(PAIR_DEFAULT));
+    for (int row = 0; row < layout->rows; row++) {
+        mvhline(row, 0, ' ', width);
+    }
+    draw_utf8(0, width - 2, "×", 1, PAIR_DEFAULT, true);
+    draw_utf8(2, 2, "Files", width - 5, PAIR_DEFAULT, true);
+    draw_utf8(2, width - 3, "+", 1, PAIR_DEFAULT, true);
+    for (int row = file_start; row < file_end; row += 2) {
+        size_t index = app->file_scroll + (size_t)((row - file_start) / 2);
         if (index >= app->file_count) {
             break;
         }
         FileEntry *entry = &app->files[index];
-        char label[4096];
-        int pair = index == app->selected_file ? PAIR_SELECTED : PAIR_DEFAULT;
-        snprintf(label, sizeof(label), "%s %s", entry->is_directory ? "/" : " ",
-                 entry->name);
-        attrset(COLOR_PAIR(pair));
+        bool selected = index == app->selected_file;
+        int pair = selected ? PAIR_SELECTED : PAIR_SIDEBAR_DIM;
+        attrset(COLOR_PAIR(PAIR_DEFAULT));
         mvhline(row, 0, ' ', width);
-        draw_utf8(row, 1, label, width - 2, pair, false);
+        draw_utf8(row, 2, entry->is_directory ? "\uf07b" : "\uf15b", 1, pair,
+                  selected);
+        draw_utf8(row, 5, entry->name, width - 7, pair, selected);
     }
-    if (buffer_header < layout->rows) {
-        draw_utf8(buffer_header, 1, "OPEN", width - 2, PAIR_HEADING, true);
-    }
-    for (int row = buffer_header + 1; row < layout->rows; row++) {
-        size_t index = app->buffer_scroll + (size_t)(row - buffer_header - 1);
-        if (index >= app->buffer_count) {
-            break;
-        }
-        Buffer *buffer = &app->buffers[index];
-        const char *name = buffer->path == NULL ? "[new file]" : strrchr(buffer->path, '/')
-                                                               ? strrchr(buffer->path, '/') + 1
-                                                               : buffer->path;
-        char label[4096];
-        int pair = index == app->active_buffer ? PAIR_SELECTED : PAIR_DEFAULT;
-        snprintf(label, sizeof(label), "%s%s", buffer->dirty ? "* " : "  ", name);
-        attrset(COLOR_PAIR(pair));
-        mvhline(row, 0, ' ', width);
-        draw_utf8(row, 1, label, width - 2, pair, false);
-    }
+    attrset(COLOR_PAIR(PAIR_BORDER));
+    mvvline(0, width, ACS_VLINE, layout->rows);
     attrset(A_NORMAL);
+}
+
+static uint64_t hash_bytes(uint64_t hash, const void *data, size_t length)
+{
+    const unsigned char *bytes = data;
+    for (size_t i = 0; i < length; i++) {
+        hash = (hash ^ bytes[i]) * UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+static uint64_t sidebar_key(const App *app, const Layout *layout)
+{
+    uint64_t hash = UINT64_C(14695981039346656037);
+    hash = hash_bytes(hash, &layout->rows, sizeof(layout->rows));
+    hash = hash_bytes(hash, &layout->sidebar_width, sizeof(layout->sidebar_width));
+    hash = hash_bytes(hash, &app->file_count, sizeof(app->file_count));
+    hash = hash_bytes(hash, &app->file_scroll, sizeof(app->file_scroll));
+    hash = hash_bytes(hash, &app->selected_file, sizeof(app->selected_file));
+    hash = hash_bytes(hash, app->current_directory, strlen(app->current_directory));
+    hash = hash_bytes(hash, "\0", 1);
+    for (size_t i = 0; i < app->file_count; i++) {
+        size_t name_length = strlen(app->files[i].name);
+        hash = hash_bytes(hash, &name_length, sizeof(name_length));
+        hash = hash_bytes(hash, app->files[i].name, name_length);
+        hash = hash_bytes(hash, &app->files[i].is_directory,
+                          sizeof(app->files[i].is_directory));
+    }
+    return hash;
 }
 
 static int draw_line(Buffer *buffer, size_t line_index, int row, int source_x,
@@ -323,10 +484,10 @@ static int diagnostic_x(Buffer *buffer, size_t line_index, int source_x, int wid
     return end_x + 2;
 }
 
-static void keep_cursor_visible(App *app, const Layout *layout, int message_row)
+static void keep_cursor_visible(App *app, const Layout *layout, int reserved_rows)
 {
     Buffer *buffer;
-    int visible_rows = message_row ? layout->rows - 1 : layout->rows;
+    int visible_rows = layout->rows - reserved_rows;
     int source_x = layout->editor_x + GUTTER_WIDTH;
     int visible_columns = layout->columns - source_x;
     size_t cursor_cell;
@@ -349,14 +510,17 @@ static void keep_cursor_visible(App *app, const Layout *layout, int message_row)
     }
 }
 
-static void draw_editor(App *app, const Layout *layout, bool message_row)
+static void draw_editor(App *app, const Layout *layout)
 {
     int source_x = layout->editor_x + GUTTER_WIDTH;
-    int visible_rows = message_row ? layout->rows - 1 : layout->rows;
+    int visible_rows = layout->rows - 2;
     int visible_columns = layout->columns - source_x;
 
     if (visible_rows <= 0 || visible_columns <= 0) {
         return;
+    }
+    for (int row = 0; row < visible_rows; row++) {
+        mvhline(row, layout->editor_x, ' ', layout->columns - layout->editor_x);
     }
     if (app->buffer_count == 0) {
         draw_utf8(2, source_x, "Select a file in the sidebar or run terminal-editor FILE",
@@ -364,7 +528,7 @@ static void draw_editor(App *app, const Layout *layout, bool message_row)
         return;
     }
     Buffer *buffer = &app->buffers[app->active_buffer];
-    keep_cursor_visible(app, layout, message_row);
+    keep_cursor_visible(app, layout, 2);
     for (int row = 0; row < visible_rows; row++) {
         size_t line_index = buffer->top_line + (size_t)row;
         if (line_index >= buffer->line_count) {
@@ -404,40 +568,152 @@ static void draw_editor(App *app, const Layout *layout, bool message_row)
     }
 }
 
+static int text_cell_width(const char *text)
+{
+    size_t offset = 0;
+    int cells = 0;
+    mbstate_t state = {0};
+    while (text[offset] != '\0') {
+        wchar_t character;
+        size_t amount = mbrtowc(&character, text + offset, strlen(text + offset), &state);
+        if (amount == (size_t)-1 || amount == (size_t)-2 || amount == 0) {
+            memset(&state, 0, sizeof(state));
+            amount = 1;
+            character = L'�';
+        }
+        int width = wcwidth(character);
+        cells += width > 0 ? width : 1;
+        offset += amount;
+    }
+    return cells;
+}
+
+static void draw_footerbar(App *app, const Layout *layout, bool show_message,
+                           const char *message)
+{
+    int row = layout->rows - 1;
+    int start = layout->editor_x;
+    int width = layout->columns - start;
+    char branch_label[sizeof(app->git_branch) + 8];
+    int branch_width;
+    int message_start;
+    int saved_y;
+    int saved_x;
+
+    if (row < 0 || width <= 0) {
+        return;
+    }
+    getyx(stdscr, saved_y, saved_x);
+    snprintf(branch_label, sizeof(branch_label), "Git: %s", app->git_branch);
+    branch_width = text_cell_width(branch_label);
+    if (branch_width > width - 2) {
+        branch_width = width - 2;
+    }
+    attrset(COLOR_PAIR(PAIR_DEFAULT));
+    mvhline(row, start, ' ', width);
+    mvhline(row - 1, start, ' ', width);
+    draw_utf8(row, start + 1, branch_label, branch_width, PAIR_SELECTED, false);
+    message_start = start + branch_width + 3;
+    if (show_message && message_start < layout->columns) {
+        draw_utf8(row, message_start, message, layout->columns - message_start,
+                  PAIR_SELECTED, false);
+    }
+    move(saved_y, saved_x);
+}
+
 static void draw_screen(App *app)
 {
     Layout layout = get_layout(app);
-    bool show_message = message_visible(app);
+    bool external_change = active_external_change_pending(app);
+    bool show_message = status_visible(app);
+    const char *message = external_change
+                              ? "File changed on disk: Ctrl+R reloads, Ctrl+S overwrites"
+                              : app->message;
 
-    erase();
     if (layout.sidebar_visible) {
-        draw_sidebar(app, &layout);
+        uint64_t key = sidebar_key(app, &layout);
+        if (!sidebar_render_key_valid || key != sidebar_render_key) {
+            draw_sidebar(app, &layout);
+            sidebar_render_key = key;
+            sidebar_render_key_valid = true;
+        }
+    } else {
+        sidebar_render_key_valid = false;
+        for (int row = 0; row < layout.rows; row++) {
+            mvhline(row, 0, ' ', layout.editor_x);
+        }
+        draw_utf8(0, 0, "+", 1, PAIR_DEFAULT, true);
     }
-    draw_editor(app, &layout, show_message);
-    if (show_message && layout.rows > 0) {
-        attrset(COLOR_PAIR(PAIR_INFO) | A_BOLD);
-        mvhline(layout.rows - 1, 0, ' ', layout.columns);
-        draw_utf8(layout.rows - 1, 0, app->message, layout.columns,
-                  PAIR_INFO, true);
-    }
+    draw_editor(app, &layout);
+    draw_footerbar(app, &layout, show_message, message);
     attrset(A_NORMAL);
+    if (kitty_sync_updates) {
+        fflush(stdout);
+        putp("\033[?2026h");
+        fflush(stdout);
+    }
     refresh();
+    if (kitty_sync_updates) {
+        putp("\033[?2026l");
+        fflush(stdout);
+    }
 }
 
 static int refresh_files(App *app)
 {
     FileEntry *entries = NULL;
     size_t count = 0;
+    struct stat directory_metadata;
+    bool have_directory_metadata = stat(app->current_directory, &directory_metadata) == 0;
+    char *selected_path = app->selected_file < app->file_count
+                              ? strdup(app->files[app->selected_file].path)
+                              : NULL;
+
     if (files_list(app->current_directory, &entries, &count) != 0) {
+        free(selected_path);
         return -1;
     }
     files_free(app->files, app->file_count);
     app->files = entries;
     app->file_count = count;
-    if (app->selected_file >= count) {
+    if (selected_path != NULL) {
+        bool found = false;
+        for (size_t i = 0; i < count; i++) {
+            if (strcmp(entries[i].path, selected_path) == 0) {
+                app->selected_file = i;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            app->selected_file = count == 0 ? 0 : count - 1;
+        }
+    } else if (app->selected_file >= count) {
         app->selected_file = count == 0 ? 0 : count - 1;
     }
+    free(selected_path);
+    if (have_directory_metadata) {
+        app->directory_metadata = directory_metadata;
+        app->directory_metadata_valid = true;
+    }
     return 0;
+}
+
+static bool directory_metadata_changed(const App *app)
+{
+    struct stat current;
+    if (stat(app->current_directory, &current) != 0) {
+        return false;
+    }
+    if (!app->directory_metadata_valid) {
+        return true;
+    }
+    return current.st_dev != app->directory_metadata.st_dev ||
+           current.st_ino != app->directory_metadata.st_ino ||
+           current.st_mtim.tv_sec != app->directory_metadata.st_mtim.tv_sec ||
+           current.st_mtim.tv_nsec != app->directory_metadata.st_mtim.tv_nsec ||
+           current.st_ctim.tv_sec != app->directory_metadata.st_ctim.tv_sec ||
+           current.st_ctim.tv_nsec != app->directory_metadata.st_ctim.tv_nsec;
 }
 
 static int append_buffer(App *app, const char *path)
@@ -573,6 +849,64 @@ static void run_lint(App *app, Buffer *buffer)
     }
 }
 
+static int reload_buffer_from_disk(Buffer *buffer)
+{
+    Buffer loaded = {0};
+    size_t old_line = buffer->cursor_line;
+    size_t old_column = buffer->cursor_column;
+    size_t old_top = buffer->top_line;
+    size_t old_left = buffer->left_cell;
+
+    if (buffer->path == NULL || buffer_load(&loaded, buffer->path) != 0) {
+        return -1;
+    }
+    loaded.cursor_line = old_line < loaded.line_count ? old_line : loaded.line_count - 1;
+    size_t max_column = buffer_line_codepoints(&loaded.lines[loaded.cursor_line]);
+    loaded.cursor_column = old_column < max_column ? old_column : max_column;
+    loaded.top_line = old_top < loaded.line_count ? old_top : loaded.line_count - 1;
+    loaded.left_cell = old_left;
+    buffer_destroy(buffer);
+    *buffer = loaded;
+    return 0;
+}
+
+static bool poll_external_changes(App *app)
+{
+    bool changed_any = refresh_git_branch(app);
+
+    if (directory_metadata_changed(app)) {
+        if (refresh_files(app) == 0) {
+            changed_any = true;
+        } else {
+            set_message(app, "Could not refresh directory");
+        }
+    }
+
+    for (size_t i = 0; i < app->buffer_count; i++) {
+        Buffer *buffer = &app->buffers[i];
+        if (!buffer_check_external_change(buffer)) {
+            continue;
+        }
+        changed_any = true;
+        if (buffer->dirty) {
+            buffer->external_change_pending = true;
+            continue;
+        }
+        if (reload_buffer_from_disk(buffer) == 0) {
+            if (i == app->active_buffer) {
+                run_lint(app, buffer);
+                set_message(app, "Reloaded external changes");
+            }
+        } else {
+            buffer->disk_metadata_valid = false;
+            if (i == app->active_buffer) {
+                set_message(app, "Could not reload changed file");
+            }
+        }
+    }
+    return changed_any;
+}
+
 static int prompt_path(const char *label, char *output, size_t output_size)
 {
     wchar_t input[4096] = {0};
@@ -582,6 +916,7 @@ static int prompt_path(const char *label, char *output, size_t output_size)
     wint_t key;
     int result;
 
+    sidebar_render_key_valid = false;
     curs_set(1);
     getmaxyx(stdscr, rows, columns);
     for (;;) {
@@ -606,7 +941,7 @@ static int prompt_path(const char *label, char *output, size_t output_size)
         if (key == 27) {
             return 0;
         }
-        if (key == L'\n' || key == KEY_ENTER) {
+        if (key == L'\n' || key == L'\r' || key == KEY_ENTER) {
             break;
         }
         if ((key == 127 || key == 8) && length > 0) {
@@ -626,23 +961,144 @@ static int prompt_path(const char *label, char *output, size_t output_size)
     return output[0] == '\0' ? 0 : 1;
 }
 
-static void save_active_buffer(App *app)
+static void create_sidebar_entry(App *app)
+{
+    wint_t key;
+    char name[4096];
+    char *path;
+    int kind = 0;
+    int rows;
+    int columns;
+    int result;
+    bool opened = false;
+
+    sidebar_render_key_valid = false;
+    getmaxyx(stdscr, rows, columns);
+    for (;;) {
+        move(rows - 1, 0);
+        clrtoeol();
+        draw_utf8(rows - 1, 0, "Create (f)ile or (d)irectory (Esc cancels):",
+                  columns, PAIR_INFO, true);
+        refresh();
+        result = get_wch(&key);
+        if (result == ERR) continue;
+        if (key == 27) return;
+        if (result != KEY_CODE_YES && (key == L'f' || key == L'F')) { kind = 1; break; }
+        if (result != KEY_CODE_YES && (key == L'd' || key == L'D')) { kind = 2; break; }
+    }
+
+    result = prompt_path(kind == 1 ? "New file name: " : "New directory name: ",
+                         name, sizeof(name));
+    if (result <= 0) {
+        set_message(app, "Creation cancelled");
+        return;
+    }
+    if (strchr(name, '/') != NULL || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+        set_message(app, "Enter a name in the current directory");
+        return;
+    }
+    path = join_path(app->current_directory, name);
+    if (path == NULL) {
+        set_message(app, "Not enough memory to create entry");
+        return;
+    }
+
+    if (kind == 1) {
+        int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0666);
+        if (fd < 0) {
+            char message[256];
+            snprintf(message, sizeof(message), "Create failed: %s", strerror(errno));
+            set_message(app, message);
+            free(path);
+            return;
+        }
+        close(fd);
+    } else if (mkdir(path, 0777) != 0) {
+        char message[256];
+        snprintf(message, sizeof(message), "Create failed: %s", strerror(errno));
+        set_message(app, message);
+        free(path);
+        return;
+    }
+
+    if (refresh_files(app) != 0) {
+        set_message(app, "Created entry; could not refresh sidebar");
+        free(path);
+        return;
+    }
+    for (size_t i = 0; i < app->file_count; i++) {
+        if (strcmp(app->files[i].path, path) == 0) {
+            app->selected_file = i;
+            int visible = rows > 4 ? (rows - 4 + 1) / 2 : 1;
+            app->file_scroll = i >= (size_t)visible ? i - (size_t)visible + 1 : 0;
+            break;
+        }
+    }
+    if (kind == 1) {
+        if (open_file(app, path) == 0) {
+            app->editor_focused = true;
+            opened = true;
+        }
+        else set_message(app, "File created; could not open it");
+    }
+    if (kind == 2 || opened) {
+        set_message(app, kind == 1 ? "File created" : "Directory created");
+    }
+    free(path);
+}
+
+static bool confirm_action(const char *prompt)
+{
+    wint_t answer;
+    int rows;
+    int columns;
+    int result;
+
+    sidebar_render_key_valid = false;
+    getmaxyx(stdscr, rows, columns);
+    move(rows - 1, 0);
+    clrtoeol();
+    draw_utf8(rows - 1, 0, prompt, columns, PAIR_WARNING, true);
+    refresh();
+    do {
+        result = get_wch(&answer);
+    } while (result == ERR);
+    return answer == L'y' || answer == L'Y';
+}
+
+static bool save_active_buffer(App *app, bool confirm_external)
 {
     Buffer *buffer = active_buffer(app);
     char selected_path[4096];
     const char *path;
     int prompt_result;
 
+    if (buffer != NULL && buffer->path != NULL &&
+        buffer_check_external_change(buffer)) {
+        if (buffer->dirty) {
+            buffer->external_change_pending = true;
+        } else if (reload_buffer_from_disk(buffer) != 0) {
+            buffer->disk_metadata_valid = false;
+            set_message(app, "Could not reload changed file");
+            return false;
+        }
+    }
+    if (buffer != NULL && buffer->external_change_pending &&
+        confirm_external &&
+        !confirm_action("File changed externally. Overwrite it? [y/N]")) {
+        return false;
+    }
+
     if (buffer == NULL) {
         prompt_result = prompt_path("Save new file: ", selected_path,
                                     sizeof(selected_path));
         if (prompt_result <= 0) {
             set_message(app, "Save cancelled");
-            return;
+            return false;
         }
         if (append_buffer(app, selected_path) != 0) {
             set_message(app, "Could not create buffer");
-            return;
+            return false;
         }
         buffer = active_buffer(app);
     }
@@ -651,7 +1107,7 @@ static void save_active_buffer(App *app)
                                     sizeof(selected_path));
         if (prompt_result <= 0) {
             set_message(app, "Save cancelled");
-            return;
+            return false;
         }
         path = selected_path;
     } else {
@@ -661,11 +1117,41 @@ static void save_active_buffer(App *app)
         char message[256];
         snprintf(message, sizeof(message), "Save failed: %s", strerror(errno));
         set_message(app, message);
-        return;
+        return false;
     }
+    buffer->external_change_pending = false;
     refresh_files(app);
     set_message(app, "Saved");
     run_lint(app, buffer);
+    return true;
+}
+
+static void close_active_buffer(App *app)
+{
+    size_t closing = app->active_buffer;
+    if (app->buffer_count == 0 || closing >= app->buffer_count) {
+        set_message(app, "No open file");
+        return;
+    }
+    if (app->buffers[closing].dirty && !save_active_buffer(app, false)) {
+        return;
+    }
+    buffer_destroy(&app->buffers[closing]);
+    memmove(&app->buffers[closing], &app->buffers[closing + 1],
+            (app->buffer_count - closing - 1) * sizeof(*app->buffers));
+    app->buffer_count--;
+    if (app->buffer_count == 0) {
+        free(app->buffers);
+        app->buffers = NULL;
+        app->active_buffer = 0;
+    } else if (closing >= app->buffer_count) {
+        app->active_buffer = app->buffer_count - 1;
+    } else {
+        app->active_buffer = closing;
+    }
+    app->selected_buffer = app->active_buffer;
+    app->editor_focused = true;
+    set_message(app, "Closed file");
 }
 
 static bool any_dirty(const App *app)
@@ -686,6 +1172,7 @@ static bool confirm_exit(App *app)
     if (!any_dirty(app)) {
         return true;
     }
+    sidebar_render_key_valid = false;
     getmaxyx(stdscr, rows, columns);
     move(rows - 1, 0);
     clrtoeol();
@@ -715,9 +1202,8 @@ static void enter_directory(App *app, const char *path)
 
 static void sidebar_click(App *app, const Layout *layout, int y)
 {
-    int split = layout->file_split;
-    if (y > 0 && y < split) {
-        size_t index = app->file_scroll + (size_t)(y - 1);
+    if (y >= 4 && y < layout->rows && (y - 4) % 2 == 0) {
+        size_t index = app->file_scroll + (size_t)((y - 4) / 2);
         if (index < app->file_count) {
             FileEntry *entry = &app->files[index];
             app->selected_file = index;
@@ -727,14 +1213,48 @@ static void sidebar_click(App *app, const Layout *layout, int y)
                 set_message(app, "Could not open file");
             }
         }
-    } else if (y > split && y < layout->rows) {
-        size_t index = app->buffer_scroll + (size_t)(y - split - 1);
-        if (index < app->buffer_count) {
-            app->active_buffer = index;
-            app->selected_buffer = index;
-            app->editor_focused = true;
+    }
+}
+
+static void delete_sidebar_file(App *app, const Layout *layout, int y)
+{
+    size_t index;
+    FileEntry *entry;
+    char prompt[256];
+
+    if (y < 4 || y >= layout->rows || (y - 4) % 2 != 0) {
+        return;
+    }
+    index = app->file_scroll + (size_t)((y - 4) / 2);
+    if (index >= app->file_count) {
+        return;
+    }
+    entry = &app->files[index];
+    if (entry->is_directory) {
+        set_message(app, "Directories cannot be deleted from the sidebar");
+        return;
+    }
+    for (size_t i = 0; i < app->buffer_count; i++) {
+        if (buffer_path_is(&app->buffers[i], entry->path) && app->buffers[i].dirty) {
+            set_message(app, "Cannot delete a file with unsaved changes");
+            return;
         }
     }
+    snprintf(prompt, sizeof(prompt), "Delete %.180s permanently? [y/N]", entry->name);
+    if (!confirm_action(prompt)) {
+        return;
+    }
+    if (unlink(entry->path) != 0) {
+        char message[256];
+        snprintf(message, sizeof(message), "Delete failed: %s", strerror(errno));
+        set_message(app, message);
+        return;
+    }
+    if (refresh_files(app) != 0) {
+        set_message(app, "File deleted; could not refresh directory");
+        return;
+    }
+    set_message(app, "File deleted");
 }
 
 static void place_mouse_cursor(App *app, const Layout *layout, int y, int x,
@@ -764,20 +1284,51 @@ static void place_mouse_cursor(App *app, const Layout *layout, int y, int x,
     buffer_set_cursor(buffer, line_index, column, extend_selection);
 }
 
+static void set_mouse_pointer_shape(const char *shape)
+{
+    if (!kitty_sync_updates || strcmp(current_pointer_shape, shape) == 0) {
+        return;
+    }
+    fprintf(stdout, "\033]22;%s\033\\", shape);
+    fflush(stdout);
+    snprintf(current_pointer_shape, sizeof(current_pointer_shape), "%s", shape);
+}
+
+static void update_mouse_pointer(const App *app, const Layout *layout,
+                                 const MEVENT *event)
+{
+    bool clickable = false;
+    bool sidebar_hover = layout->sidebar_visible && event->x >= 0 &&
+                         event->x < layout->sidebar_width;
+
+    if (sidebar_hover) {
+        clickable = (event->y == 0 && event->x >= layout->sidebar_width - 3) ||
+                    (event->y == 2 && event->x >= layout->sidebar_width - 4 &&
+                     event->x < layout->sidebar_width - 2) ||
+                    (event->y >= 4 && event->y < layout->rows &&
+                     (event->y - 4) % 2 == 0 &&
+                     app->file_scroll + (size_t)((event->y - 4) / 2) < app->file_count);
+    } else if (!layout->sidebar_visible && event->x == 0 && event->y == 0) {
+        clickable = true;
+    }
+    set_mouse_pointer_shape(clickable ? "pointer" : sidebar_hover ? "default" : "text");
+}
+
 static void handle_mouse(App *app, const Layout *layout, MEVENT *event)
 {
+    update_mouse_pointer(app, layout, event);
     if (!layout->sidebar_visible && event->x < layout->editor_x) {
+        if (event->y == 0 && (event->bstate & BUTTON1_CLICKED)) {
+            app->config.sidebar_visible = true;
+        }
         return;
     }
     if (event->bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
         int delta = event->bstate & BUTTON4_PRESSED ? -3 : 3;
         if (layout->sidebar_visible && event->x < layout->sidebar_width) {
-            if (event->y < layout->file_split) {
+            if (event->y >= 4) {
                 long next = (long)app->file_scroll + delta;
                 app->file_scroll = next < 0 ? 0 : (size_t)next;
-            } else {
-                long next = (long)app->buffer_scroll + delta;
-                app->buffer_scroll = next < 0 ? 0 : (size_t)next;
             }
         } else if (active_buffer(app) != NULL) {
             Buffer *buffer = active_buffer(app);
@@ -788,7 +1339,16 @@ static void handle_mouse(App *app, const Layout *layout, MEVENT *event)
     }
     if (layout->sidebar_visible && event->x < layout->sidebar_width) {
         app->editor_focused = false;
-        if (event->bstate & BUTTON1_CLICKED) {
+        if (event->y == 0 && event->x >= layout->sidebar_width - 3 &&
+            (event->bstate & BUTTON1_CLICKED)) {
+            app->config.sidebar_visible = false;
+        } else if (event->y == 2 && event->x >= layout->sidebar_width - 4 &&
+                   event->x < layout->sidebar_width - 2 &&
+                   (event->bstate & BUTTON1_CLICKED)) {
+            create_sidebar_entry(app);
+        } else if (event->bstate & BUTTON3_CLICKED) {
+            delete_sidebar_file(app, layout, event->y);
+        } else if (event->bstate & BUTTON1_CLICKED) {
             sidebar_click(app, layout, event->y);
         }
         return;
@@ -817,22 +1377,64 @@ static void handle_key(App *app, wint_t input, int key_result)
         if (input == KEY_F(2)) {
             app->config.sidebar_visible = !app->config.sidebar_visible;
         } else if (input == KEY_ENTER && app->editor_focused && buffer != NULL) {
+            if (buffer_history_record(buffer) != 0) return;
             buffer_newline(buffer, app->config.autoindent, app->config.tab_width);
         } else if (input == KEY_BACKSPACE && app->editor_focused && buffer != NULL) {
+            if (buffer_history_record(buffer) != 0) return;
             buffer_backspace(buffer);
         } else if (input == KEY_DC && app->editor_focused && buffer != NULL) {
+            if (buffer_history_record(buffer) != 0) return;
             buffer_delete(buffer);
         }
         return;
     }
-    if (input == 24) {
+    if (input == 24 || input == 3) {
         if (confirm_exit(app)) {
             app->running = false;
         }
         return;
     }
-    if (input == 15) {
-        save_active_buffer(app);
+    if (input == 23) {
+        close_active_buffer(app);
+        return;
+    }
+    if (input == 26 || input == 25) {
+        buffer = active_buffer(app);
+        if (buffer == NULL || !app->editor_focused) return;
+        int result = input == 26 ? buffer_undo(buffer) : buffer_redo(buffer);
+        set_message(app, result < 0 ? "Not enough memory for undo history"
+                                    : result > 0 ? (input == 26 ? "Undo" : "Redo")
+                                                 : (input == 26 ? "Nothing to undo" : "Nothing to redo"));
+        return;
+    }
+    if (input == 18) {
+        buffer = active_buffer(app);
+        if (buffer == NULL || buffer->path == NULL) {
+            set_message(app, "No file to reload");
+            return;
+        }
+        if (buffer_check_external_change(buffer)) {
+            buffer->external_change_pending = true;
+        }
+        if (!buffer->external_change_pending) {
+            set_message(app, "No external changes");
+            return;
+        }
+        if (buffer->dirty &&
+            !confirm_action("Reload file and discard local edits? [y/N]")) {
+            return;
+        }
+        if (reload_buffer_from_disk(buffer) != 0) {
+            buffer->disk_metadata_valid = false;
+            set_message(app, "Could not reload changed file");
+            return;
+        }
+        run_lint(app, buffer);
+        set_message(app, "Reloaded external changes");
+        return;
+    }
+    if (input == 15 || input == 19) {
+        save_active_buffer(app, true);
         return;
     }
     if (!app->editor_focused) {
@@ -842,15 +1444,19 @@ static void handle_key(App *app, wint_t input, int key_result)
     if (buffer == NULL) {
         return;
     }
-    if (input == L'\n' || input == KEY_ENTER) {
+    if (input == L'\n' || input == L'\r' || input == KEY_ENTER) {
+        if (buffer_history_record(buffer) != 0) return;
         buffer_newline(buffer, app->config.autoindent, app->config.tab_width);
     } else if (input == L'\t') {
+        if (buffer_history_record(buffer) != 0) return;
         for (size_t i = 0; i < app->config.tab_width; i++) {
             buffer_insert(buffer, L' ');
         }
     } else if (input == 127 || input == 8) {
+        if (buffer_history_record(buffer) != 0) return;
         buffer_backspace(buffer);
     } else if (iswprint(input)) {
+        if (buffer_history_record(buffer) != 0) return;
         buffer_insert(buffer, (wchar_t)input);
     }
 }
@@ -859,23 +1465,45 @@ int ui_run(App *app)
 {
     wint_t input;
     int result;
+    bool redraw = true;
+    bool message_was_visible = false;
 
     if (initscr() == NULL) {
         return 1;
     }
-    cbreak();
+    raw();
     noecho();
     keypad(stdscr, TRUE);
+    idlok(stdscr, FALSE);
+    idcok(stdscr, FALSE);
+    scrollok(stdscr, FALSE);
     mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
     wtimeout(stdscr, 200);
     curs_set(1);
+    /* DECSCUSR 6 selects a steady vertical bar cursor in Kitty and compatible terminals. */
+    fputs("\033[6 q", stdout);
+    fflush(stdout);
     init_colors(&app->config);
+    const char *term = getenv("TERM");
+    kitty_sync_updates = term != NULL && strcmp(term, "xterm-kitty") == 0;
+    refresh_git_branch(app);
+    if (refresh_files(app) != 0) {
+        set_message(app, "Could not refresh directory");
+    }
 
     while (app->running) {
         Layout layout = get_layout(app);
-        draw_screen(app);
+        if (redraw) {
+            draw_screen(app);
+            message_was_visible = status_visible(app);
+            redraw = false;
+        }
         result = get_wch(&input);
         if (result == ERR) {
+            bool external_changed = poll_external_changes(app);
+            if (external_changed || status_visible(app) != message_was_visible) {
+                redraw = true;
+            }
             continue;
         }
         if (result == KEY_CODE_YES && input == KEY_MOUSE) {
@@ -888,7 +1516,18 @@ int ui_run(App *app)
         } else {
             handle_key(app, input, result);
         }
+        redraw = true;
+    }
+    if (restore_border_color) {
+        init_color(BORDER_COLOR, saved_border_color[0], saved_border_color[1],
+                   saved_border_color[2]);
+    }
+    if (kitty_sync_updates) {
+        fprintf(stdout, "\033]22;\033\\");
+        fflush(stdout);
     }
     endwin();
+    fputs("\033[0 q", stdout);
+    fflush(stdout);
     return 0;
 }
