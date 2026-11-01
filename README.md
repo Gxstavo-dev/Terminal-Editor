@@ -2,6 +2,8 @@
 
 **A low-memory, mouse-driven terminal editor inspired by Nano.**
 
+![Example Image](Example.png)
+
 ## Build and launch
 
 Requirements: a C compiler, GNU Make, `pkg-config`, and ncursesw development headers.
@@ -54,19 +56,19 @@ Do not commit the AppImage into the Git repository.
 
 ## Keyboard shortcuts
 
-| Shortcut | Action |
-| --- | --- |
-| `Ctrl+C` | Copy the current selection to the system clipboard |
-| `Ctrl+V` | Paste the system clipboard at the cursor, replacing a selection |
-| `Ctrl+Z` | Undo the last edit |
-| `Ctrl+Y` | Redo the last undone edit |
-| `Ctrl+S` / `Ctrl+O` | Save the current buffer |
-| `Ctrl+W` | Save changes and close the active buffer |
-| `Ctrl+R` | Reload the file from disk after confirmation |
-| `Ctrl+X` | Exit the editor |
-| `F2` | Show or hide the sidebar |
-| `Tab` | Insert spaces according to `tab_width` |
-| `Enter` | Insert a new line, preserving indentation when autoindent is on |
+| Shortcut            | Action                                                          |
+| ------------------- | --------------------------------------------------------------- |
+| `Ctrl+C`            | Copy the current selection to the system clipboard              |
+| `Ctrl+V`            | Paste the system clipboard at the cursor, replacing a selection |
+| `Ctrl+Z`            | Undo the last edit                                              |
+| `Ctrl+Y`            | Redo the last undone edit                                       |
+| `Ctrl+S` / `Ctrl+O` | Save the current buffer                                         |
+| `Ctrl+W`            | Save changes and close the active buffer                        |
+| `Ctrl+R`            | Reload the file from disk after confirmation                    |
+| `Ctrl+X`            | Exit the editor                                                 |
+| `F2`                | Show or hide the sidebar                                        |
+| `Tab`               | Insert spaces according to `tab_width`                          |
+| `Enter`             | Insert a new line, preserving indentation when autoindent is on |
 
 Typing inserts text at the cursor. Backspace deletes the selection or the character before the cursor; Delete removes the selection or the character after the cursor. Mouse drags select text, including multiline and reverse drags. Each buffer keeps up to 100 edit states; starting a new edit clears its redo history.
 
