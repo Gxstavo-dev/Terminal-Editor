@@ -12,7 +12,7 @@ Editor de texto para terminal inspirado en Nano, con interfaz moderna, mouse com
 - Sin barras persistentes arriba o abajo ni scrollbar; números de línea blancos en tema oscuro y paleta con acentos turquesa.
 - Fuente elegida en la aplicación de terminal; el proyecto documentará cómo cambiarla en distintos emuladores.
 - Configuración para tema, tabulación, autoindentación, sidebar y comandos de lint por extensión.
-- Linters externos se ejecutan al guardar. Los errores y avisos aparecen inline junto a las líneas y se pueden pulsar para saltar a su ubicación.
+- Linters externos se ejecutan al guardar (límite: cinco segundos y 1 MiB de salida). Los errores y avisos aparecen inline junto a las líneas y se pueden pulsar para saltar a su ubicación.
 - La API de plugins se pospone hasta que la configuración y la integración de diagnósticos estén asentadas.
 
 ## Hoja de ruta

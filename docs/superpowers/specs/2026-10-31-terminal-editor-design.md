@@ -37,7 +37,7 @@ El programa aceptará una ruta como argumento; si aún no existe, iniciará un b
 - Al crear una línea, conservar la indentación de la anterior; `Tab` insertará cuatro espacios.
 - `Ctrl+O` guarda el buffer actual, siguiendo la convención de Nano. Si no tiene ruta, solicitará una.
 - `Ctrl+X` cierra el editor. Si hay cambios sin guardar, pedirá confirmación.
-- La configuración asociará extensiones de archivo con comandos de lint externos. El lint se ejecutará al guardar y leerá diagnósticos con el formato `ruta:línea:columna: severidad: mensaje`, donde severidad es `error`, `warning` o `info`; hacer clic en un diagnóstico llevará el cursor a su ubicación.
+- La configuración asociará extensiones de archivo con comandos de lint externos. El lint se ejecutará al guardar, con un límite de cinco segundos y 1 MiB de salida; leerá diagnósticos con el formato `ruta:línea:columna: severidad: mensaje`, donde severidad es `error`, `warning` o `info`; hacer clic en un diagnóstico llevará el cursor a su ubicación.
 - Los errores de lectura o escritura se mostrarán como avisos temporales.
 
 ## Límites del prototipo

@@ -11,4 +11,6 @@
 - Task 3 ruling: include a synthetic `..` directory entry so mouse-only browsing can return to the parent directory; this adds one sidebar row and keeps navigation in the current folder tree.
 - Task 4: complete; `make clean && make` compiles and links config parsing without warnings.
 - Task 4 ruling: the font remains a terminal-emulator preference because terminal font controls are not portable; the editor documents the limitation. The light theme switches line numbers to black for contrast; dark theme keeps them white.
-- Task 5: in progress.
+- Task 5: complete; `make clean && make` compiles and links lint process handling and inline diagnostics without warnings.
+- Task 5 rulings: linter commands run via `execvp` without a shell, have a five-second timeout and 1 MiB output cap, and diagnostics for other files are discarded from the active buffer. Out-of-range locations clamp to the final line/column.
+- Task 6: in progress.

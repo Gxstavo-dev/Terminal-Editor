@@ -19,6 +19,7 @@
 - Keep persistent title, footer, and scrollbar hidden; show white line numbers.
 - Read configuration from `~/.config/terminal-editor/config`.
 - Run configured external linters on save; accept `path:line:column: severity: message`, with severity `error`, `warning`, or `info`.
+- Limit each lint run to five seconds and 1 MiB captured output.
 - Target about 6.9 MiB RSS for the idle editor with an empty buffer, measured on the same host as Nano; report lint-child usage separately.
 - Do not implement the plugin API in v0.1.
 
@@ -134,11 +135,11 @@
 - Modify: `README.md`
 
 **Interfaces:**
-- `int lint_run(const LintRule *rule, const char *path, Diagnostic **items, size_t *count);` launches the configured argv with `fork`/`execvp`, captures output, and returns parsed diagnostics.
+- `int lint_run(const LintRule *rule, const char *path, Diagnostic **items, size_t *count, int *exit_status);` launches the configured argv with `fork`/`execvp`, captures output, and returns parsed diagnostics; it fails on spawn errors, five-second timeout, or 1 MiB output overflow.
 - `void diagnostics_free(Diagnostic *items, size_t count);` frees each message and the array.
 - `bool diagnostic_parse_line(const char *text, Diagnostic *item);` accepts `path:line:column: severity: message`, with one-based line/column and severity `error`, `warning`, or `info`.
 
-- [ ] Launch the linter without a shell, capture both stdout and stderr, wait for its exit, and preserve the editor buffer regardless of child failure.
+- [ ] Launch the linter without a shell, capture both stdout and stderr, enforce the five-second and 1 MiB limits, reap the child, and preserve the editor buffer regardless of child failure.
 - [ ] Parse valid diagnostics from the right so paths and messages may contain spaces or colons; ignore malformed lines, clamp out-of-range locations when navigating, and show a transient warning if the program cannot start.
 - [ ] Run the matching rule after a successful save and replace that buffer's prior diagnostics with the new results.
 - [ ] Draw severity markers in the line-number margin and short diagnostic text beside visible source lines; clip text to available width and keep the underlying source unchanged.

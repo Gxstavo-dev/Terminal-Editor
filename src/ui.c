@@ -2,6 +2,7 @@
 
 #include "buffer.h"
 #include "files.h"
+#include "lint.h"
 
 #include <curses.h>
 #include <errno.h>
@@ -488,6 +489,90 @@ static Buffer *active_buffer(App *app)
     return app->buffer_count == 0 ? NULL : &app->buffers[app->active_buffer];
 }
 
+static LintRule *lint_rule_for(AppConfig *config, const char *path)
+{
+    const char *name = strrchr(path, '/');
+    const char *extension;
+    name = name == NULL ? path : name + 1;
+    extension = strrchr(name, '.');
+    if (extension == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < config->rule_count; i++) {
+        if (strcmp(config->rules[i].extension, extension) == 0) {
+            return &config->rules[i];
+        }
+    }
+    return NULL;
+}
+
+static bool same_path(const char *first, const char *second)
+{
+    char *left = realpath(first, NULL);
+    char *right = realpath(second, NULL);
+    bool same = left != NULL && right != NULL ? strcmp(left, right) == 0
+                                              : strcmp(first, second) == 0;
+    free(left);
+    free(right);
+    return same;
+}
+
+static void run_lint(App *app, Buffer *buffer)
+{
+    LintRule *rule = buffer->path == NULL ? NULL : lint_rule_for(&app->config,
+                                                                buffer->path);
+    Diagnostic *items = NULL;
+    size_t count = 0;
+    int exit_status = 0;
+
+    if (rule == NULL) {
+        diagnostics_free(buffer->diagnostics, buffer->diagnostic_count);
+        buffer->diagnostics = NULL;
+        buffer->diagnostic_count = 0;
+        return;
+    }
+    if (lint_run(rule, buffer->path, &items, &count, &exit_status) != 0) {
+        char message[256];
+        snprintf(message, sizeof(message), "Lint failed: %s", strerror(errno));
+        set_message(app, message);
+        return;
+    }
+    for (size_t i = 0; i < count;) {
+        if (same_path(items[i].path, buffer->path)) {
+            i++;
+            continue;
+        }
+        free(items[i].path);
+        free(items[i].message);
+        memmove(&items[i], &items[i + 1], (count - i - 1) * sizeof(*items));
+        count--;
+    }
+    diagnostics_free(buffer->diagnostics, buffer->diagnostic_count);
+    buffer->diagnostics = items;
+    buffer->diagnostic_count = count;
+    for (size_t i = 0; i < count; i++) {
+        if (buffer->diagnostics[i].line > buffer->line_count) {
+            buffer->diagnostics[i].line = buffer->line_count;
+        }
+        size_t maximum = buffer_line_codepoints(
+            &buffer->lines[buffer->diagnostics[i].line - 1]) + 1;
+        if (buffer->diagnostics[i].column > maximum) {
+            buffer->diagnostics[i].column = maximum;
+        }
+    }
+    if (count > 0) {
+        char message[128];
+        snprintf(message, sizeof(message), "Lint: %zu diagnostic(s)", count);
+        set_message(app, message);
+    } else if (exit_status != 0) {
+        char message[128];
+        snprintf(message, sizeof(message), "Lint exited with status %d", exit_status);
+        set_message(app, message);
+    } else {
+        set_message(app, "No lint issues");
+    }
+}
+
 static int prompt_path(const char *label, char *output, size_t output_size)
 {
     wchar_t input[4096] = {0};
@@ -580,6 +665,7 @@ static void save_active_buffer(App *app)
     }
     refresh_files(app);
     set_message(app, "Saved");
+    run_lint(app, buffer);
 }
 
 static bool any_dirty(const App *app)
@@ -669,7 +755,7 @@ static void place_mouse_cursor(App *app, const Layout *layout, int y, int x,
                                            layout->columns - source_x,
                                            buffer->left_cell))) {
         buffer_set_cursor(buffer, diagnostic->line > 0 ? diagnostic->line - 1 : 0,
-                          diagnostic->column, false);
+                          diagnostic->column > 0 ? diagnostic->column - 1 : 0, false);
         return;
     }
     size_t cell = x > source_x ? buffer->left_cell + (size_t)(x - source_x)
@@ -708,9 +794,12 @@ static void handle_mouse(App *app, const Layout *layout, MEVENT *event)
         return;
     }
     app->editor_focused = true;
-    if (event->bstate & BUTTON1_PRESSED) {
+    Buffer *buffer = active_buffer(app);
+    if ((event->bstate & REPORT_MOUSE_POSITION) && buffer != NULL && buffer->selecting) {
+        place_mouse_cursor(app, layout, event->y, event->x, true);
+    } else if (event->bstate & BUTTON1_PRESSED) {
         place_mouse_cursor(app, layout, event->y, event->x, false);
-        Buffer *buffer = active_buffer(app);
+        buffer = active_buffer(app);
         if (buffer != NULL) {
             buffer->selection_line = buffer->cursor_line;
             buffer->selection_column = buffer->cursor_column;
@@ -718,8 +807,6 @@ static void handle_mouse(App *app, const Layout *layout, MEVENT *event)
         }
     } else if (event->bstate & BUTTON1_CLICKED) {
         place_mouse_cursor(app, layout, event->y, event->x, false);
-    } else if ((event->bstate & REPORT_MOUSE_POSITION) && active_buffer(app) != NULL) {
-        place_mouse_cursor(app, layout, event->y, event->x, true);
     }
 }
 

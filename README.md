@@ -44,7 +44,7 @@ Available settings are `theme=dark|light`, `tab_width=1..16`, `autoindent=true|f
 
 ## Linters and diagnostics
 
-Configured linters run after a successful save. Their output should use one diagnostic per line:
+Configured linters run after a successful save, with a five-second timeout and a 1 MiB output cap. Their output should use one diagnostic per line:
 
 ```text
 path:line:column: severity: message
