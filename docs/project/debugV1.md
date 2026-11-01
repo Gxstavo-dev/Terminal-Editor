@@ -116,6 +116,14 @@ unknown type [0x13] section `.relr.dyn'
 
 **Solución:** `packaging/appimage/build.sh` exporta `NO_STRIP=1` antes de invocar linuxdeploy. El AppImage se genera sin eliminar símbolos, lo que no afecta al funcionamiento. El problema y la solución se confirmaron ejecutando el script completo.
 
+## 14. Arrastrar el ratón no seleccionaba texto
+
+**Síntoma:** al arrastrar sobre el texto no aparecía la selección con fondo de color y `Ctrl+C` respondía `Select text to copy`.
+
+**Causa:** ncurses habilitaba el seguimiento de clics (`1000`) pero no el de movimiento con botón pulsado (`1002`), porque las entradas de terminfo de xterm y Kitty no incluyen la capacidad de movimiento. El editor solo extendía la selección al recibir eventos de movimiento, así que el arrastre se quedaba en un punto vacío.
+
+**Solución:** `src/ui.c` solicita explícitamente `CSI ? 1002 h` al iniciar y lo desactiva con `CSI ? 1002 l` al salir. Además, el evento de liberación del botón también extiende la selección, de modo que un arrastre funciona incluso si el terminal no envía eventos intermedios. La selección se dibuja con el par de color `PAIR_SELECTION` (fondo cian en el tema oscuro).
+
 ## Verificación de compilación y paquete
 
 - `make clean && make` compiló sin advertencias.
@@ -123,4 +131,5 @@ unknown type [0x13] section `.relr.dyn'
 - Las pruebas del módulo de portapapeles usaron helpers `wl-copy`/`wl-paste` simulados porque el entorno de compilación no tenía instalado un helper real.
 - `./packaging/appimage/build.sh` generó `dist/terminal-editor-x86_64.AppImage` (x86_64, ejecutable) con ncursesw y avisos de licencia.
 - El AppImage arrancó desde una terminal con y sin un archivo como argumento; con un helper simulado, `Ctrl+V` insertó Unicode y `Ctrl+S` guardó el resultado.
-- Falta que el usuario confirme la copia mediante arrastre de ratón en Kitty y el resultado visual general.
+- Se simuló un arrastre de ratón con secuencias SGR: la selección se resaltó y `Ctrl+C` copió el texto esperado; sin selección, `Ctrl+C` no modificó el portapapeles.
+- Falta que el usuario confirme visualmente el arrastre en su terminal y el resultado general.

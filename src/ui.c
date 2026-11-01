@@ -1369,6 +1369,10 @@ static void handle_mouse(App *app, const Layout *layout, MEVENT *event)
             buffer->selection_column = buffer->cursor_column;
             buffer->selecting = true;
         }
+    } else if (event->bstate & BUTTON1_RELEASED) {
+        if (buffer != NULL && buffer->selecting) {
+            place_mouse_cursor(app, layout, event->y, event->x, true);
+        }
     } else if (event->bstate & BUTTON1_CLICKED) {
         place_mouse_cursor(app, layout, event->y, event->x, false);
     }
@@ -1529,6 +1533,10 @@ int ui_run(App *app)
     idcok(stdscr, FALSE);
     scrollok(stdscr, FALSE);
     mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+    /* ncurses terminfo entries often omit the motion capability, so request
+       button-motion reporting explicitly; otherwise terminal drags never
+       produce the events needed to extend a text selection. */
+    fputs("\033[?1002h", stdout);
     wtimeout(stdscr, 200);
     curs_set(1);
     /* DECSCUSR 6 selects a steady vertical bar cursor in Kitty and compatible terminals. */
@@ -1578,7 +1586,7 @@ int ui_run(App *app)
         fflush(stdout);
     }
     endwin();
-    fputs("\033[0 q", stdout);
+    fputs("\033[?1002l\033[0 q", stdout);
     fflush(stdout);
     return 0;
 }
