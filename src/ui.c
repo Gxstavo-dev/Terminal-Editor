@@ -1,6 +1,10 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2026 Gxstavo-dev */
+
 #include "ui.h"
 
 #include "buffer.h"
+#include "clipboard.h"
 #include "files.h"
 #include "lint.h"
 
@@ -1388,7 +1392,54 @@ static void handle_key(App *app, wint_t input, int key_result)
         }
         return;
     }
-    if (input == 24 || input == 3) {
+    if (input == 3) {
+        char *text = NULL;
+        size_t length = 0;
+        int result;
+
+        buffer = active_buffer(app);
+        if (buffer == NULL || !app->editor_focused) {
+            return;
+        }
+        result = buffer_copy_selection(buffer, &text, &length);
+        if (result < 0) {
+            set_message(app, "Not enough memory to copy selection");
+            return;
+        }
+        if (result == 0) {
+            set_message(app, "Select text to copy");
+            return;
+        }
+        if (clipboard_copy(text, length) != 0) {
+            set_message(app, "Install wl-clipboard (Wayland) or xclip/xsel (X11)");
+        } else {
+            set_message(app, "Copied selection");
+        }
+        free(text);
+        return;
+    }
+    if (input == 22) {
+        char *text = NULL;
+        size_t length = 0;
+
+        buffer = active_buffer(app);
+        if (buffer == NULL || !app->editor_focused) {
+            return;
+        }
+        if (clipboard_paste(&text, &length) != 0) {
+            set_message(app, "Install wl-clipboard (Wayland) or xclip/xsel (X11)");
+            return;
+        }
+        if (buffer_insert_text(buffer, text, length) != 0) {
+            set_message(app, errno == EILSEQ ? "Clipboard text is not valid UTF-8"
+                                             : "Could not paste clipboard text");
+        } else {
+            set_message(app, "Pasted");
+        }
+        free(text);
+        return;
+    }
+    if (input == 24) {
         if (confirm_exit(app)) {
             app->running = false;
         }

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal-Editor
+Comment=Low-memory mouse-driven terminal text editor
+Exec=terminal-editor %F
+Icon=terminal-editor
+Terminal=true
+Categories=Development;TextEditor;

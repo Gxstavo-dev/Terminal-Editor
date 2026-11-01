@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2026 Gxstavo-dev */
+
 #include "buffer.h"
 
 #include <errno.h>
@@ -250,6 +253,9 @@ static void state_restore(Buffer *buffer, BufferState *state)
 
 int buffer_history_record(Buffer *buffer)
 {
+    BufferState snapshot;
+
+    if (state_copy(&snapshot, buffer) != 0) return -1;
     for (size_t i = 0; i < buffer->redo_count; i++) state_destroy(&buffer->redo[i]);
     buffer->redo_count = 0;
     if (buffer->undo_count == 100) {
@@ -258,7 +264,7 @@ int buffer_history_record(Buffer *buffer)
         memset(&buffer->undo[99], 0, sizeof(buffer->undo[99]));
         buffer->undo_count--;
     }
-    if (state_copy(&buffer->undo[buffer->undo_count], buffer) != 0) return -1;
+    buffer->undo[buffer->undo_count] = snapshot;
     buffer->undo_count++;
     return 0;
 }
@@ -433,6 +439,344 @@ static int delete_selection(Buffer *buffer)
 int buffer_delete_selection(Buffer *buffer)
 {
     return delete_selection(buffer);
+}
+
+static bool valid_utf8(const char *text, size_t length)
+{
+    size_t offset = 0;
+
+    while (offset < length) {
+        unsigned char first = (unsigned char)text[offset];
+        size_t extra;
+        uint32_t codepoint;
+
+        if (first == 0) {
+            return false;
+        }
+        if (first < 0x80) {
+            offset++;
+            continue;
+        }
+        if ((first & 0xE0) == 0xC0) {
+            extra = 1;
+            codepoint = first & 0x1F;
+        } else if ((first & 0xF0) == 0xE0) {
+            extra = 2;
+            codepoint = first & 0x0F;
+        } else if ((first & 0xF8) == 0xF0) {
+            extra = 3;
+            codepoint = first & 0x07;
+        } else {
+            return false;
+        }
+        if (offset + extra >= length) {
+            return false;
+        }
+        for (size_t i = 1; i <= extra; i++) {
+            unsigned char continuation = (unsigned char)text[offset + i];
+            if ((continuation & 0xC0) != 0x80) {
+                return false;
+            }
+            codepoint = (codepoint << 6) | (continuation & 0x3F);
+        }
+        if ((extra == 1 && codepoint < 0x80) ||
+            (extra == 2 && codepoint < 0x800) ||
+            (extra == 3 && codepoint < 0x10000) ||
+            codepoint > 0x10FFFF ||
+            (codepoint >= 0xD800 && codepoint <= 0xDFFF)) {
+            return false;
+        }
+        offset += extra + 1;
+    }
+    return true;
+}
+
+static size_t utf8_codepoints(const char *text, size_t length)
+{
+    size_t count = 0;
+
+    for (size_t i = 0; i < length; i++) {
+        if (((unsigned char)text[i] & 0xC0) != 0x80) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void normalize_selection(const Buffer *buffer, size_t *start_line,
+                                size_t *start_column, size_t *end_line,
+                                size_t *end_column)
+{
+    *start_line = buffer->selection_line;
+    *start_column = buffer->selection_column;
+    *end_line = buffer->cursor_line;
+    *end_column = buffer->cursor_column;
+    if (*start_line > *end_line ||
+        (*start_line == *end_line && *start_column > *end_column)) {
+        size_t swap = *start_line;
+        *start_line = *end_line;
+        *end_line = swap;
+        swap = *start_column;
+        *start_column = *end_column;
+        *end_column = swap;
+    }
+}
+
+int buffer_copy_selection(const Buffer *buffer, char **text, size_t *length)
+{
+    size_t start_line;
+    size_t start_column;
+    size_t end_line;
+    size_t end_column;
+    size_t start_byte;
+    size_t end_byte;
+    size_t total;
+    size_t offset = 0;
+    char *copy;
+
+    if (text == NULL || length == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    *text = NULL;
+    *length = 0;
+    if (buffer == NULL || !buffer->selecting) {
+        return 0;
+    }
+    normalize_selection(buffer, &start_line, &start_column, &end_line, &end_column);
+    if (start_line == end_line && start_column == end_column) {
+        return 0;
+    }
+    start_byte = byte_offset(&buffer->lines[start_line], start_column);
+    end_byte = byte_offset(&buffer->lines[end_line], end_column);
+    if (start_line == end_line) {
+        total = end_byte - start_byte;
+    } else {
+        total = buffer->lines[start_line].byte_length - start_byte + end_byte +
+                (end_line - start_line);
+        for (size_t i = start_line + 1; i < end_line; i++) {
+            total += buffer->lines[i].byte_length;
+        }
+    }
+    copy = malloc(total + 1);
+    if (copy == NULL) {
+        return -1;
+    }
+    if (start_line == end_line) {
+        memcpy(copy, buffer->lines[start_line].data + start_byte, total);
+        offset = total;
+    } else {
+        size_t amount = buffer->lines[start_line].byte_length - start_byte;
+        memcpy(copy + offset, buffer->lines[start_line].data + start_byte, amount);
+        offset += amount;
+        copy[offset++] = '\n';
+        for (size_t i = start_line + 1; i < end_line; i++) {
+            amount = buffer->lines[i].byte_length;
+            memcpy(copy + offset, buffer->lines[i].data, amount);
+            offset += amount;
+            copy[offset++] = '\n';
+        }
+        memcpy(copy + offset, buffer->lines[end_line].data, end_byte);
+        offset += end_byte;
+    }
+    copy[offset] = '\0';
+    *text = copy;
+    *length = offset;
+    return 1;
+}
+
+typedef struct {
+    const char *data;
+    size_t length;
+} TextSegment;
+
+static int assemble_line(Line *line, const char *prefix, size_t prefix_length,
+                         const char *text, size_t text_length,
+                         const char *suffix, size_t suffix_length)
+{
+    size_t total = prefix_length + text_length + suffix_length;
+    size_t offset = 0;
+    char *data = malloc(total + 1);
+
+    if (data == NULL) {
+        return -1;
+    }
+    if (prefix_length > 0) {
+        memcpy(data + offset, prefix, prefix_length);
+        offset += prefix_length;
+    }
+    if (text_length > 0) {
+        memcpy(data + offset, text, text_length);
+        offset += text_length;
+    }
+    if (suffix_length > 0) {
+        memcpy(data + offset, suffix, suffix_length);
+        offset += suffix_length;
+    }
+    data[offset] = '\0';
+    line->data = data;
+    line->byte_length = total;
+    return 0;
+}
+
+static int copy_line(Line *destination, const Line *source)
+{
+    return assemble_line(destination, source->data, source->byte_length, NULL, 0, NULL, 0);
+}
+
+int buffer_insert_text(Buffer *buffer, const char *text, size_t length)
+{
+    const char *input = text != NULL ? text : "";
+    size_t start_line;
+    size_t start_column;
+    size_t end_line;
+    size_t end_column;
+    size_t start_byte;
+    size_t end_byte;
+    size_t prefix_length;
+    size_t suffix_length;
+    size_t segment_count = 1;
+    size_t segment_index = 0;
+    size_t segment_start = 0;
+    size_t result_count;
+    size_t cursor_line;
+    size_t cursor_column;
+    bool region_empty;
+    TextSegment *segments = NULL;
+    Line *new_lines = NULL;
+    int result = -1;
+
+    if (buffer == NULL || (text == NULL && length > 0)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!valid_utf8(input, length)) {
+        errno = EILSEQ;
+        return -1;
+    }
+    if (buffer->selecting) {
+        normalize_selection(buffer, &start_line, &start_column, &end_line, &end_column);
+        region_empty = start_line == end_line && start_column == end_column;
+        if (region_empty) {
+            start_line = end_line = buffer->cursor_line;
+            start_column = end_column = buffer->cursor_column;
+        }
+    } else {
+        start_line = end_line = buffer->cursor_line;
+        start_column = end_column = buffer->cursor_column;
+        region_empty = true;
+    }
+    if (length == 0 && region_empty) {
+        return 0;
+    }
+    for (size_t i = 0; i < length; i++) {
+        if (input[i] == '\n') {
+            segment_count++;
+        }
+    }
+    segments = calloc(segment_count, sizeof(*segments));
+    if (segments == NULL) {
+        return -1;
+    }
+    for (size_t i = 0; i < length; i++) {
+        if (input[i] == '\n') {
+            size_t end = i;
+            if (end > segment_start && input[end - 1] == '\r') {
+                end--;
+            }
+            segments[segment_index].data = input + segment_start;
+            segments[segment_index].length = end - segment_start;
+            segment_index++;
+            segment_start = i + 1;
+        }
+    }
+    segments[segment_index].data = input + segment_start;
+    segments[segment_index].length = length - segment_start;
+
+    start_byte = byte_offset(&buffer->lines[start_line], start_column);
+    end_byte = byte_offset(&buffer->lines[end_line], end_column);
+    prefix_length = start_byte;
+    suffix_length = buffer->lines[end_line].byte_length - end_byte;
+    result_count = buffer->line_count - (end_line - start_line + 1) + segment_count;
+
+    new_lines = calloc(result_count, sizeof(*new_lines));
+    if (new_lines == NULL) {
+        goto cleanup;
+    }
+    for (size_t i = 0; i < start_line; i++) {
+        if (copy_line(&new_lines[i], &buffer->lines[i]) != 0) {
+            goto cleanup;
+        }
+    }
+    if (segment_count == 1) {
+        if (assemble_line(&new_lines[start_line],
+                          buffer->lines[start_line].data, prefix_length,
+                          segments[0].data, segments[0].length,
+                          buffer->lines[end_line].data + end_byte, suffix_length) != 0) {
+            goto cleanup;
+        }
+    } else {
+        if (assemble_line(&new_lines[start_line],
+                          buffer->lines[start_line].data, prefix_length,
+                          segments[0].data, segments[0].length, NULL, 0) != 0) {
+            goto cleanup;
+        }
+        for (size_t i = 1; i + 1 < segment_count; i++) {
+            if (assemble_line(&new_lines[start_line + i], NULL, 0,
+                              segments[i].data, segments[i].length, NULL, 0) != 0) {
+                goto cleanup;
+            }
+        }
+        if (assemble_line(&new_lines[start_line + segment_count - 1], NULL, 0,
+                          segments[segment_count - 1].data,
+                          segments[segment_count - 1].length,
+                          buffer->lines[end_line].data + end_byte, suffix_length) != 0) {
+            goto cleanup;
+        }
+    }
+    for (size_t i = end_line + 1, destination = start_line + segment_count;
+         i < buffer->line_count; i++, destination++) {
+        if (copy_line(&new_lines[destination], &buffer->lines[i]) != 0) {
+            goto cleanup;
+        }
+    }
+
+    cursor_line = start_line + segment_count - 1;
+    if (segment_count == 1) {
+        cursor_column = start_column +
+                        utf8_codepoints(segments[0].data, segments[0].length);
+    } else {
+        cursor_column = utf8_codepoints(segments[segment_count - 1].data,
+                                        segments[segment_count - 1].length);
+    }
+
+    if (buffer_history_record(buffer) != 0) {
+        goto cleanup;
+    }
+    for (size_t i = 0; i < buffer->line_count; i++) {
+        free(buffer->lines[i].data);
+    }
+    free(buffer->lines);
+    buffer->lines = new_lines;
+    buffer->line_count = result_count;
+    buffer->cursor_line = cursor_line;
+    buffer->cursor_column = cursor_column;
+    buffer->selection_line = cursor_line;
+    buffer->selection_column = cursor_column;
+    buffer->selecting = false;
+    buffer->dirty = true;
+    new_lines = NULL;
+    result = 0;
+
+cleanup:
+    if (new_lines != NULL) {
+        for (size_t i = 0; i < result_count; i++) {
+            free(new_lines[i].data);
+        }
+        free(new_lines);
+    }
+    free(segments);
+    return result;
 }
 
 void buffer_set_cursor(Buffer *buffer, size_t line, size_t column, bool extend_selection)

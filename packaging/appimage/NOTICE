@@ -1,0 +1,9 @@
+Terminal-Editor AppImage
+=======================
+
+The Terminal-Editor source is licensed under GNU GPL-3.0-or-later.
+See the LICENSE file included in this AppImage.
+
+The AppImage bundles third-party runtime libraries collected by linuxdeploy.
+Those libraries remain under their own licenses. Available license notices are
+installed under usr/share/doc/terminal-editor/licenses/.

@@ -6,7 +6,7 @@ Este archivo conserva los problemas encontrados durante el prototipo, cómo se l
 
 **Causa:** el modo `cbreak()` deja activo el control de flujo IXON de la terminal. En ese modo, `Ctrl+S` puede ser consumido como pausa de salida antes de llegar a ncurses.
 
-**Solución:** `src/ui.c` usa `raw()` y trata el código de `Ctrl+S` (`19`) como guardar, junto con `Ctrl+O`. Como `raw()` también desactiva las señales normales, `Ctrl+C` (`3`) se maneja explícitamente como salida. Las entradas de nueva línea aceptan `\n`, `\r` y `KEY_ENTER`.
+**Solución:** `src/ui.c` usa `raw()` y trata el código de `Ctrl+S` (`19`) como guardar, junto con `Ctrl+O`. Como `raw()` también desactiva las señales normales, `Ctrl+X` (`24`) se maneja explícitamente como salida y `Ctrl+C` (`3`) como copiar la selección. Las entradas de nueva línea aceptan `\n`, `\r` y `KEY_ENTER`.
 
 ## 2. Los iconos del árbol aparecían como rectángulos vacíos
 
@@ -103,6 +103,24 @@ El mismo sondeo compara los metadatos del directorio actual. Si se crea o elimin
 
 **Solución:** el rótulo ahora se dibuja con ncurses al tamaño normal del texto del editor. Se conserva la fila vacía de separación sobre el footer.
 
-## Verificación de compilación
+## 13. linuxdeploy fallaba al ejecutar `strip` sobre ncurses
 
-Después del cambio al bucle de repintado por eventos, `make` compiló correctamente y `git diff --check` no reportó problemas. Falta que el usuario confirme el resultado visual en Kitty.
+**Síntoma:** al crear el AppImage, linuxdeploy abortaba con:
+
+```text
+ERROR: Strip call failed: .../usr/bin/strip: .../usr/lib/libncursesw.so.6:
+unknown type [0x13] section `.relr.dyn'
+```
+
+**Causa:** el binario `strip` incluido en linuxdeploy no reconoce las secciones `.relr.dyn` que genera el binutils actual de Arch Linux.
+
+**Solución:** `packaging/appimage/build.sh` exporta `NO_STRIP=1` antes de invocar linuxdeploy. El AppImage se genera sin eliminar símbolos, lo que no afecta al funcionamiento. El problema y la solución se confirmaron ejecutando el script completo.
+
+## Verificación de compilación y paquete
+
+- `make clean && make` compiló sin advertencias.
+- Las pruebas del buffer cubrieron copia directa e inversa, selección multilínea UTF-8, pegado con reemplazo, undo único, CRLF, UTF-8 inválido, NUL incrustado y pegado vacío.
+- Las pruebas del módulo de portapapeles usaron helpers `wl-copy`/`wl-paste` simulados porque el entorno de compilación no tenía instalado un helper real.
+- `./packaging/appimage/build.sh` generó `dist/terminal-editor-x86_64.AppImage` (x86_64, ejecutable) con ncursesw y avisos de licencia.
+- El AppImage arrancó desde una terminal con y sin un archivo como argumento; con un helper simulado, `Ctrl+V` insertó Unicode y `Ctrl+S` guardó el resultado.
+- Falta que el usuario confirme la copia mediante arrastre de ratón en Kitty y el resultado visual general.

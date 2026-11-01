@@ -14,6 +14,9 @@ Editor de texto para terminal inspirado en Nano, con interfaz moderna, mouse com
 - Configuración para tema, tabulación, autoindentación, sidebar y comandos de lint por extensión.
 - Linters externos se ejecutan al guardar (límite: cinco segundos y 1 MiB de salida). Los errores y avisos aparecen inline junto a las líneas y se pueden pulsar para saltar a su ubicación.
 - La API de plugins se pospone hasta que la configuración y la integración de diagnósticos estén asentadas.
+- Licencia GNU GPL-3.0-or-later, con atribución a `Gxstavo-dev` (2026). La GPL permite redistribuir y modificar el proyecto bajo sus términos.
+- Portapapeles del sistema con `Ctrl+C` y `Ctrl+V`; usa `wl-copy`/`wl-paste` en Wayland y `xclip` o `xsel` en X11 como dependencias opcionales.
+- Empaquetado reproducible como AppImage para Linux x86_64 mediante `packaging/appimage/build.sh`; el artefacto generado no se versiona.
 - Medición más reciente del binario en este entorno: **5.048 kB RSS** con un buffer vacío; la comparación exacta debe hacerse en el equipo del usuario.
 
 ## Hoja de ruta
@@ -30,6 +33,8 @@ Editor de texto para terminal inspirado en Nano, con interfaz moderna, mouse com
 - Actualizar automáticamente el árbol lateral al crear o borrar archivos desde fuera del editor.
 - Borrar archivos desde el sidebar con clic derecho y confirmación; proteger carpetas y buffers con cambios locales.
 - Mostrar la rama Git actual en un footer de una línea bajo el editor y actualizarla al cambiar de rama.
+- Copiar selecciones como UTF-8 con `Ctrl+C` y pegar de forma transaccional con `Ctrl+V` usando el portapapeles del sistema.
+- Publicar el código bajo GNU GPL-3.0-or-later y ofrecer un AppImage para Linux x86_64.
 - Configuración legible en `~/.config/terminal-editor/config` para tema, tabulación, autoindentación, sidebar y comandos de lint.
 - Ejecutar el linter configurado al guardar y mostrar diagnósticos inline tipo ErrorLens. Formato inicial de diagnóstico: `ruta:línea:columna: severidad: mensaje` (`error`, `warning` o `info`).
 - Medir RSS inactivo en el mismo entorno que Nano; revisar el diseño si se aleja mucho de 6,9 MiB.
@@ -48,4 +53,4 @@ Editor de texto para terminal inspirado en Nano, con interfaz moderna, mouse com
 
 ## Estado y siguiente paso
 
-La v0.1 está implementada en la rama `feature/v0.1-prototype` y compila sin advertencias. La interacción completa aún requiere revisión manual en el terminal del usuario. Mantener este archivo actualizado al cerrar cada versión o cambiar una decisión.
+La v0.1 está implementada en `main`, incluye licencia GPL-3.0-or-later, portapapeles del sistema y receta de AppImage, y compila sin advertencias. La interacción completa, el portapapeles y el lanzamiento del AppImage aún requieren revisión manual en el terminal del usuario. Mantener este archivo actualizado al cerrar cada versión o cambiar una decisión.

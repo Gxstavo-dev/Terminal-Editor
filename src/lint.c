@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2026 Gxstavo-dev */
+
 #define _POSIX_C_SOURCE 200809L
 
 #include "lint.h"
