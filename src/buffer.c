@@ -471,21 +471,21 @@ int buffer_newline(Buffer *buffer, bool autoindent, size_t tab_width)
         while (indent_bytes < line->byte_length &&
                (line->data[indent_bytes] == ' ' || line->data[indent_bytes] == '\t')) {
             if (line->data[indent_bytes] == '\t') {
-                indent_columns += tab_width;
+                indent_columns += tab_width == 0 ? 1 : tab_width;
             } else {
                 indent_columns++;
             }
             indent_bytes++;
         }
         if (indent_bytes > 0) {
-            char *indented = malloc(indent_bytes + strlen(right) + 1);
+            char *indented = malloc(indent_columns + strlen(right) + 1);
             if (indented == NULL) {
                 free(left);
                 free(right);
                 return -1;
             }
-            memcpy(indented, line->data, indent_bytes);
-            strcpy(indented + indent_bytes, right);
+            memset(indented, ' ', indent_columns);
+            strcpy(indented + indent_columns, right);
             free(right);
             right = indented;
         }

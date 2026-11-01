@@ -1,6 +1,6 @@
 # Diseño: prototipo de editor moderno para terminal
 
-**Estado:** propuesta revisada, pendiente de aprobación  
+**Estado:** implementada como v0.1; pendiente de revisión manual en el terminal del usuario
 **Fecha:** 2026-10-31
 
 ## Objetivo

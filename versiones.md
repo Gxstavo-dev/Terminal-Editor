@@ -14,6 +14,7 @@ Editor de texto para terminal inspirado en Nano, con interfaz moderna, mouse com
 - Configuración para tema, tabulación, autoindentación, sidebar y comandos de lint por extensión.
 - Linters externos se ejecutan al guardar (límite: cinco segundos y 1 MiB de salida). Los errores y avisos aparecen inline junto a las líneas y se pueden pulsar para saltar a su ubicación.
 - La API de plugins se pospone hasta que la configuración y la integración de diagnósticos estén asentadas.
+- Medición inicial del binario en este entorno: **5.044 kB RSS** con un buffer vacío; la comparación exacta debe hacerse en el equipo del usuario.
 
 ## Hoja de ruta
 
@@ -40,4 +41,4 @@ Editor de texto para terminal inspirado en Nano, con interfaz moderna, mouse com
 
 ## Estado y siguiente paso
 
-El diseño está escrito en `docs/superpowers/specs/2026-10-31-terminal-editor-design.md` y espera revisión del usuario. Después de aprobarlo, se prepara el plan de implementación y se empieza v0.1. Mantener este archivo actualizado al cerrar cada versión o cambiar una decisión.
+La v0.1 está implementada en la rama `feature/v0.1-prototype` y compila sin advertencias. La interacción completa aún requiere revisión manual en el terminal del usuario. Mantener este archivo actualizado al cerrar cada versión o cambiar una decisión.

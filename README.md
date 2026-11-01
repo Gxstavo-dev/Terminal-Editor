@@ -58,4 +58,4 @@ The terminal emulator controls the font. Change the font in the terminal's prefe
 
 ## Memory target
 
-The target is approximately 6.9 MiB RSS for the idle editor with an empty buffer, compared with Nano on the same host. A linter is a separate child process and may temporarily use additional memory.
+The target is approximately 6.9 MiB RSS for the idle editor with an empty buffer, compared with Nano on the same host. The initial measurement in the development environment was 5,044 kB RSS. A linter is a separate child process and may temporarily use additional memory.

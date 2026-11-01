@@ -2,15 +2,20 @@
 
 - Setup: isolated worktree `/home/ale/terminal-editor/.worktrees/v0.1-prototype`, branch `feature/v0.1-prototype`; base commit `e422e50`.
 - Preflight: clean baseline; GCC 16.2.1, GNU Make 4.4.1, ncursesw 6.6 available.
-- Ruling: no automated tests are added or run because the workspace instructions prohibit them unless requested; compilation and source review will be used as implementation checks.
+- Ruling: no automated tests are added or run because the workspace instructions prohibit them unless requested; compilation and source review are used as implementation checks — cost if wrong: unexercised interactions may still contain defects.
 - Task 1: complete; `make clean && make` links the skeleton against ncursesw with no compiler warnings.
-- Ruling: this system exposes ncursesw declarations via `<curses.h>` rather than `<ncursesw/curses.h>`; use the generic header with `pkg-config`'s `-lncursesw` link flags. Verified by the successful build.
+- Ruling: this system exposes ncursesw declarations via `<curses.h>` rather than `<ncursesw/curses.h>`; use the generic header with `pkg-config`'s `-lncursesw` link flags — cost if wrong: another ncurses distribution may require a different include path, so the build stays pkg-config based.
 - Task 2: complete; `make` compiles and links the buffer module without warnings.
-- Task 2 rulings: line and cursor positions count Unicode code points while stored text remains UTF-8; line endings preserve LF/CRLF and final-newline state. Atomic saves resolve existing symlinks to their target before replacement.
+- Task 2 ruling: cursor positions count Unicode code points while stored text remains UTF-8, and saves preserve LF/CRLF plus final-newline state — cost if wrong: grapheme clusters and mixed line-ending files need more handling.
+- Task 2 ruling: saves use a sibling temporary file and resolve existing symlinks to their target before replacement — cost if wrong: unusual filesystem semantics or metadata beyond mode bits may differ from direct writes.
 - Task 3: complete; `make clean && make` compiles and links the sidebar, ncurses layout, mouse handling, and file navigation without warnings.
-- Task 3 ruling: include a synthetic `..` directory entry so mouse-only browsing can return to the parent directory; this adds one sidebar row and keeps navigation in the current folder tree.
+- Task 3 ruling: include a synthetic `..` directory entry so mouse-only browsing can return to the parent directory — cost if wrong: the sidebar uses one extra row.
 - Task 4: complete; `make clean && make` compiles and links config parsing without warnings.
-- Task 4 ruling: the font remains a terminal-emulator preference because terminal font controls are not portable; the editor documents the limitation. The light theme switches line numbers to black for contrast; dark theme keeps them white.
+- Task 4 ruling: font selection stays with the terminal emulator because font controls are not portable; the editor documents the limitation — cost if wrong: users cannot set a font from this editor's config.
+- Task 4 ruling: light theme switches line numbers to black for contrast; dark theme keeps them white — cost if wrong: line numbers are not white in light theme.
 - Task 5: complete; `make clean && make` compiles and links lint process handling and inline diagnostics without warnings.
-- Task 5 rulings: linter commands run via `execvp` without a shell, have a five-second timeout and 1 MiB output cap, and diagnostics for other files are discarded from the active buffer. Out-of-range locations clamp to the final line/column.
-- Task 6: in progress.
+- Task 5 ruling: lint commands run via `execvp` without a shell and receive the file path as their final argument — cost if wrong: shell pipelines and shell expansions require a wrapper executable.
+- Task 5 ruling: lint output is capped at 1 MiB and each run at five seconds — cost if wrong: verbose or slow lint commands are stopped.
+- Task 5 ruling: diagnostics for other files are discarded from the active buffer, and out-of-range positions clamp to the final line/column — cost if wrong: related-file diagnostics are not displayed in v0.1.
+- Task 6: complete; final `make clean && make` completed without compiler warnings, and the empty-buffer editor measured 5,044 kB RSS in this environment. No automated tests were added or run.
+- Final review: self-review (no subagent reviewer available under the current collaboration restrictions).
