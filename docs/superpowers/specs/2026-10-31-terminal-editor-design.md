@@ -1,6 +1,6 @@
 # Diseño: prototipo de editor moderno para terminal
 
-**Estado:** propuesta revisada, pendiente de aprobación  
+**Estado:** implementada como v0.1; pendiente de revisión manual en el terminal del usuario
 **Fecha:** 2026-10-31
 
 ## Objetivo
@@ -13,13 +13,13 @@ El objetivo de memoria se medirá con el mismo método y entorno que Nano. Se ap
 
 Implementar en C con ncurses para manejar ventanas, entrada de teclado y mouse, redibujado y colores. Se elige sobre el control manual de secuencias ANSI porque permite dedicar el prototipo al diseño y al comportamiento del editor, manteniendo el control directo de las asignaciones de memoria.
 
-El programa aceptará una ruta como argumento; si aún no existe, iniciará un buffer nuevo asociado a esa ruta. Sin argumento, abrirá la carpeta actual para navegar desde el sidebar. El listado será de un nivel; no recorrerá directorios recursivamente en segundo plano.
+El programa aceptará una ruta como argumento; si aún no existe, iniciará un buffer nuevo asociado a esa ruta. Sin argumento, abrirá la carpeta actual para navegar desde el sidebar. El listado será de un nivel e incluirá una entrada `..` para volver al directorio padre; no recorrerá directorios recursivamente en segundo plano.
 
 ## Interfaz
 
 - Dos paneles: sidebar a la izquierda y área de edición a la derecha.
 - El sidebar mostrará archivos y directorios de la carpeta actual, además de una sección de buffers abiertos.
-- El panel de edición mostrará el texto y números de línea blancos.
+- El panel de edición mostrará el texto y números de línea blancos en el tema oscuro; el tema claro ajustará el contraste.
 - La edición usará autoindentación y tabuladores de cuatro espacios, siguiendo la configuración actual de Nano.
 - Sin barra superior, barra inferior persistente ni scrollbar. Los avisos de guardado y error serán temporales.
 - Paleta oscura sobria con acentos turquesa, adaptada a las capacidades del terminal.
@@ -37,7 +37,7 @@ El programa aceptará una ruta como argumento; si aún no existe, iniciará un b
 - Al crear una línea, conservar la indentación de la anterior; `Tab` insertará cuatro espacios.
 - `Ctrl+O` guarda el buffer actual, siguiendo la convención de Nano. Si no tiene ruta, solicitará una.
 - `Ctrl+X` cierra el editor. Si hay cambios sin guardar, pedirá confirmación.
-- La configuración asociará extensiones de archivo con comandos de lint externos. El lint se ejecutará al guardar y leerá diagnósticos con el formato `ruta:línea:columna: severidad: mensaje`, donde severidad es `error`, `warning` o `info`; hacer clic en un diagnóstico llevará el cursor a su ubicación.
+- La configuración asociará extensiones de archivo con comandos de lint externos. El lint se ejecutará al guardar, con un límite de cinco segundos y 1 MiB de salida; leerá diagnósticos con el formato `ruta:línea:columna: severidad: mensaje`, donde severidad es `error`, `warning` o `info`; hacer clic en un diagnóstico llevará el cursor a su ubicación.
 - Los errores de lectura o escritura se mostrarán como avisos temporales.
 
 ## Límites del prototipo
