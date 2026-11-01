@@ -1,6 +1,6 @@
 # Diseño: prototipo de editor moderno para terminal
 
-**Estado:** propuesta para revisión  
+**Estado:** propuesta revisada, pendiente de aprobación  
 **Fecha:** 2026-10-31
 
 ## Objetivo
@@ -11,7 +11,7 @@ El objetivo de memoria se medirá con el mismo método y entorno que Nano. Se ap
 
 ## Enfoque técnico
 
-Implementar en C con ncurses para manejar ventanas, entrada de teclado, redibujado y colores. Se elige sobre el control manual de secuencias ANSI porque permite dedicar el prototipo al diseño y al comportamiento del editor, manteniendo el control directo de las asignaciones de memoria.
+Implementar en C con ncurses para manejar ventanas, entrada de teclado y mouse, redibujado y colores. Se elige sobre el control manual de secuencias ANSI porque permite dedicar el prototipo al diseño y al comportamiento del editor, manteniendo el control directo de las asignaciones de memoria.
 
 El programa aceptará una ruta como argumento; si aún no existe, iniciará un buffer nuevo asociado a esa ruta. Sin argumento, abrirá la carpeta actual para navegar desde el sidebar. El listado será de un nivel; no recorrerá directorios recursivamente en segundo plano.
 
@@ -25,6 +25,9 @@ El programa aceptará una ruta como argumento; si aún no existe, iniciará un b
 - Paleta oscura sobria con acentos turquesa, adaptada a las capacidades del terminal.
 - El sidebar podrá ocultarse y mostrarse con `F2` para ampliar el área de edición; un clic en un panel le dará el foco.
 - El mouse será una forma principal de navegación: clic para ubicar el cursor o seleccionar elementos del sidebar, arrastre para seleccionar texto y rueda para desplazar el panel bajo el puntero.
+- La configuración en `~/.config/terminal-editor/config` permitirá cambiar paleta, ancho de tabulación, autoindentación, preferencias del sidebar y comandos de lint por extensión.
+- Los diagnósticos de lint aparecerán junto a la línea afectada, con marcas de severidad en el margen. No habrá un panel inferior persistente.
+- La fuente la elige la aplicación de terminal. El proyecto incluirá instrucciones para cambiarla en la terminal; no intentará fijar una fuente de forma no portable.
 
 ## Comportamiento
 
@@ -34,11 +37,12 @@ El programa aceptará una ruta como argumento; si aún no existe, iniciará un b
 - Al crear una línea, conservar la indentación de la anterior; `Tab` insertará cuatro espacios.
 - `Ctrl+O` guarda el buffer actual, siguiendo la convención de Nano. Si no tiene ruta, solicitará una.
 - `Ctrl+X` cierra el editor. Si hay cambios sin guardar, pedirá confirmación.
+- La configuración asociará extensiones de archivo con comandos de lint externos. El lint se ejecutará al guardar y leerá diagnósticos con el formato `ruta:línea:columna: severidad: mensaje`, donde severidad es `error`, `warning` o `info`; hacer clic en un diagnóstico llevará el cursor a su ubicación.
 - Los errores de lectura o escritura se mostrarán como avisos temporales.
 
 ## Límites del prototipo
 
-La primera versión se concentra en edición de texto, archivos y exploración visual. No incluye autocompletado, LSP, plugins, edición colaborativa ni resaltado avanzado por lenguaje. La edición se organizará por líneas y los buffers se cargarán al abrirlos.
+El prototipo ofrecerá configuración y lint mediante comandos externos configurados por extensión. Para mantener acotada la primera versión, los comandos deberán emitir diagnósticos en el formato documentado por el proyecto. No incluye API de plugins, autocompletado, LSP, edición colaborativa ni resaltado avanzado por lenguaje. La edición se organizará por líneas y los buffers se cargarán al abrirlos.
 
 ## Organización interna
 
@@ -47,6 +51,7 @@ La primera versión se concentra en edición de texto, archivos y exploración v
 - **Buffer:** mantiene líneas, cursor, cambios pendientes y operaciones de edición.
 - **Archivos:** abre, lee y guarda rutas; informa errores sin descartar cambios.
 - **Sidebar:** enumera el directorio actual y mantiene la lista de buffers abiertos.
+- **Configuración y lint:** lee las preferencias, lanza el comando asociado al archivo y normaliza sus diagnósticos para mostrarlos en el editor.
 
 El listado del sidebar será bajo demanda y de un solo nivel para limitar trabajo y memoria. El buffer de cada archivo se libera al cerrarlo.
 
@@ -56,11 +61,15 @@ El listado del sidebar será bajo demanda y de un solo nivel para limitar trabaj
 2. El usuario puede navegar archivos del directorio actual, abrirlos, cambiar entre buffers y guardar los cambios.
 3. Los cambios no guardados no se descartan accidentalmente al cerrar.
 4. El sidebar se puede ocultar con `F2`; no aparecen barras fijas arriba, abajo ni scrollbar al costado.
-5. El uso de memoria RSS al iniciar con buffer vacío se mide en el mismo entorno que Nano y se compara con los aproximadamente 6,9 MiB observados. Si se desvía de forma importante, se revisan las asignaciones y bibliotecas cargadas antes de dar el prototipo por terminado.
+5. El uso de memoria RSS del editor inactivo con buffer vacío se mide en el mismo entorno que Nano y se compara con los aproximadamente 6,9 MiB observados. Si se desvía de forma importante, se revisan las asignaciones y bibliotecas cargadas antes de dar el prototipo por terminado.
+6. Al guardar un archivo con errores de lint, aparecen diagnósticos junto a las líneas afectadas; al pulsar uno con el mouse, el cursor salta a esa ubicación.
+7. Cambiar opciones en el archivo de configuración cambia el tema y las preferencias acordadas sin recompilar.
 
 ## Riesgos y decisiones pendientes
 
 - El RSS varía por sistema, terminal, biblioteca ncurses y método de medición; la comparación requiere el mismo entorno.
+- Los procesos de lint son hijos externos y pueden elevar el consumo total de RAM mientras se ejecutan; se medirá aparte del RSS inactivo del editor.
 - Los eventos de mouse dependen de que el emulador de terminal informe clics y rueda; el teclado seguirá disponible para escribir y usar atajos.
+- La fuente es una preferencia del emulador de terminal; sus controles y formatos de configuración dependen de cada emulador. [ncurses](https://man7.org/linux/man-pages/man3/ncurses.3x.html) dibuja en celdas de caracteres; [xterm](https://invisible-island.net/xterm/manpage/xterm.html) tiene controles propios de fuentes que no son universales.
 - El tamaño y el comportamiento del sidebar en terminales estrechas se ajustarán al construir el prototipo; en pantallas muy pequeñas podrá ocultarse.
 - El soporte para Unicode y archivos con finales de línea distintos deberá definirse según lo que revele el primer prototipo.
