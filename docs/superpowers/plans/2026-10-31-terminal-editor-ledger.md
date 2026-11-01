@@ -5,4 +5,6 @@
 - Ruling: no automated tests are added or run because the workspace instructions prohibit them unless requested; compilation and source review will be used as implementation checks.
 - Task 1: complete; `make clean && make` links the skeleton against ncursesw with no compiler warnings.
 - Ruling: this system exposes ncursesw declarations via `<curses.h>` rather than `<ncursesw/curses.h>`; use the generic header with `pkg-config`'s `-lncursesw` link flags. Verified by the successful build.
-- Task 2: in progress.
+- Task 2: complete; `make` compiles and links the buffer module without warnings.
+- Task 2 rulings: line and cursor positions count Unicode code points while stored text remains UTF-8; line endings preserve LF/CRLF and final-newline state. Atomic saves resolve existing symlinks to their target before replacement.
+- Task 3: in progress.

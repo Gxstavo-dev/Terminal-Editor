@@ -61,6 +61,7 @@ typedef struct {
     size_t left_cell;
     bool dirty;
     bool final_newline;
+    bool crlf;
     bool selecting;
     size_t selection_line;
     size_t selection_column;
